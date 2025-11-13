@@ -6,8 +6,30 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// WASM型定義
+interface JsTileInfo {
+  x: number;
+  y: number;
+  hash: string;
+}
+
+interface JsTileResult {
+  width: number;
+  height: number;
+  tile_size: number;
+  tiles: JsTileInfo[];
+  tile_count(): number;
+  get_tile_data(index: number): Uint8Array;
+}
+
+interface WasmModule {
+  tile_image(imageData: Uint8Array, tileSize: number, quality?: number): JsTileResult;
+  generate_metadata(pagesJson: string, tileSize: number): string;
+  calculate_hash(data: Uint8Array): string;
+}
+
 // WASMモジュールをロード
-let wasm;
+let wasm: WasmModule;
 
 beforeAll(async () => {
   wasm = await import('./pkg/tile_wasm.js');
@@ -28,7 +50,7 @@ describe('WASM Tiling Engine', () => {
   });
 
   describe('Tiling Process', () => {
-    let result;
+    let result: JsTileResult;
 
     beforeAll(() => {
       result = wasm.tile_image(imageData, tileSize, quality);
@@ -57,17 +79,17 @@ describe('WASM Tiling Engine', () => {
       const tiles = result.tiles;
 
       // タイル座標の検証
-      expect(tiles[0].x).toBe(0);
-      expect(tiles[0].y).toBe(0);
+      expect(tiles[0]!.x).toBe(0);
+      expect(tiles[0]!.y).toBe(0);
 
-      expect(tiles[1].x).toBe(1);
-      expect(tiles[1].y).toBe(0);
+      expect(tiles[1]!.x).toBe(1);
+      expect(tiles[1]!.y).toBe(0);
 
-      expect(tiles[2].x).toBe(0);
-      expect(tiles[2].y).toBe(1);
+      expect(tiles[2]!.x).toBe(0);
+      expect(tiles[2]!.y).toBe(1);
 
-      expect(tiles[3].x).toBe(1);
-      expect(tiles[3].y).toBe(1);
+      expect(tiles[3]!.x).toBe(1);
+      expect(tiles[3]!.y).toBe(1);
     });
 
     it('should generate tiles with SHA256 hashes', () => {
@@ -91,7 +113,7 @@ describe('WASM Tiling Engine', () => {
   });
 
   describe('WebP Encoding', () => {
-    let result;
+    let result: JsTileResult;
 
     beforeAll(() => {
       result = wasm.tile_image(imageData, tileSize, quality);
@@ -106,14 +128,14 @@ describe('WASM Tiling Engine', () => {
 
     it('should generate WebP with RIFF header', () => {
       const tileData = result.get_tile_data(0);
-      const header = String.fromCharCode(...tileData.slice(0, 4));
+      const header = String.fromCharCode(...Array.from(tileData.slice(0, 4)));
 
       expect(header).toBe('RIFF');
     });
 
     it('should generate WebP with WEBP format identifier', () => {
       const tileData = result.get_tile_data(0);
-      const format = String.fromCharCode(...tileData.slice(8, 12));
+      const format = String.fromCharCode(...Array.from(tileData.slice(8, 12)));
 
       expect(format).toBe('WEBP');
     });
@@ -170,11 +192,18 @@ describe('WASM Tiling Engine', () => {
   });
 
   describe('Metadata Generation', () => {
+    interface PageInfo {
+      page: number;
+      width: number;
+      height: number;
+      tiles: Array<{ x: number; y: number; hash: string }>;
+    }
+
     it('should generate valid metadata JSON', () => {
       const result = wasm.tile_image(imageData, tileSize, quality);
       const tiles = result.tiles;
 
-      const pages = [{
+      const pages: PageInfo[] = [{
         page: 0,
         width: result.width,
         height: result.height,
@@ -192,7 +221,7 @@ describe('WASM Tiling Engine', () => {
     });
 
     it('should include version in metadata', () => {
-      const pages = [{
+      const pages: PageInfo[] = [{
         page: 0,
         width: 512,
         height: 512,
@@ -208,7 +237,7 @@ describe('WASM Tiling Engine', () => {
     });
 
     it('should include tile_size in metadata', () => {
-      const pages = [{
+      const pages: PageInfo[] = [{
         page: 0,
         width: 512,
         height: 512,
@@ -225,7 +254,7 @@ describe('WASM Tiling Engine', () => {
       const result = wasm.tile_image(imageData, tileSize, quality);
       const tiles = result.tiles;
 
-      const pages = [{
+      const pages: PageInfo[] = [{
         page: 0,
         width: result.width,
         height: result.height,
@@ -257,10 +286,10 @@ describe('WASM Tiling Engine', () => {
       }
 
       const tiles = result.tiles;
-      const savedFiles = [];
+      const savedFiles: string[] = [];
 
       for (let i = 0; i < result.tile_count(); i++) {
-        const tile = tiles[i];
+        const tile = tiles[i]!;
         const tileData = result.get_tile_data(i);
         const filename = `tile-${tile.x}-${tile.y}-${tile.hash.substring(0, 8)}.webp`;
         const filepath = join(outputDir, filename);
@@ -317,7 +346,7 @@ describe('WASM Tiling Engine', () => {
     });
 
     it('should be consistent across multiple runs', () => {
-      const times = [];
+      const times: number[] = [];
       const iterations = 10;
 
       for (let i = 0; i < iterations; i++) {

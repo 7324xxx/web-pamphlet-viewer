@@ -6,7 +6,27 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-let wasm;
+// WASM型定義
+interface JsTileInfo {
+  x: number;
+  y: number;
+  hash: string;
+}
+
+interface JsTileResult {
+  width: number;
+  height: number;
+  tile_size: number;
+  tiles: JsTileInfo[];
+  tile_count(): number;
+  get_tile_data(index: number): Uint8Array;
+}
+
+interface WasmModule {
+  tile_image(imageData: Uint8Array, tileSize: number, quality?: number): JsTileResult;
+}
+
+let wasm: WasmModule;
 
 beforeAll(async () => {
   wasm = await import('./pkg/tile_wasm.js');
@@ -24,7 +44,7 @@ describe('WASM Performance Benchmarks', () => {
     for (const tileSize of tileSizes) {
       describe(`Tile Size: ${tileSize}px`, () => {
         it(`should process image in reasonable time (avg < 50ms)`, () => {
-          const times = [];
+          const times: number[] = [];
 
           for (let i = 0; i < iterations; i++) {
             const start = performance.now();
@@ -73,7 +93,7 @@ describe('WASM Performance Benchmarks', () => {
             totalSize += tileData.length;
 
             // WebP形式を検証
-            const header = String.fromCharCode(...tileData.slice(0, 4));
+            const header = String.fromCharCode(...Array.from(tileData.slice(0, 4)));
             expect(header).toBe('RIFF');
           }
 
@@ -91,7 +111,7 @@ describe('WASM Performance Benchmarks', () => {
   describe('Scalability Tests', () => {
     it('should handle repeated processing efficiently', () => {
       const iterations = 100;
-      const times = [];
+      const times: number[] = [];
 
       for (let i = 0; i < iterations; i++) {
         const start = performance.now();
@@ -134,7 +154,7 @@ describe('WASM Performance Benchmarks', () => {
 
     for (const quality of qualities) {
       it(`should handle quality ${quality} efficiently`, () => {
-        const times = [];
+        const times: number[] = [];
         const iterations = 5;
 
         for (let i = 0; i < iterations; i++) {
@@ -156,7 +176,7 @@ describe('WASM Performance Benchmarks', () => {
   describe('Parallel Processing Simulation', () => {
     it('should handle concurrent tiling requests', async () => {
       const concurrentRequests = 5;
-      const promises = [];
+      const promises: Promise<{ tileCount: number; time: number }>[] = [];
 
       const startTime = performance.now();
 
