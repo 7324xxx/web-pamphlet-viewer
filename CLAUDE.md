@@ -98,69 +98,139 @@ Workers
 
 ## プロジェクト構造（pnpm workspace）
 
+### ディレクトリ構成
+
 ```
 web-pamphlet-viewer/
 ├── pnpm-workspace.yaml        # pnpmワークスペース定義
 ├── package.json               # ルートpackage.json（共通dev依存等）
-├── CLAUDE.md                  # 本ファイル
-├── README.md
+├── .gitignore                 # Git除外設定
+├── CLAUDE.md                  # 本ファイル（アーキテクチャ設計書）
+├── README.md                  # プロジェクト概要
 │
 ├── workers/                   # Cloudflare Workers (Hono API + JSX UI)
-│   ├── package.json
-│   ├── wrangler.toml          # Workers設定、R2/KVバインディング
-│   ├── tsconfig.json
+│   ├── package.json           # workers依存関係
+│   ├── wrangler.toml          # Workers設定、R2/KVバインディング、環境変数
+│   ├── tsconfig.json          # TypeScript設定
+│   ├── .dev.vars              # ローカル開発用環境変数（.gitignore）
 │   └── src/
 │       ├── index.ts           # Honoアプリエントリポイント
+│       │                      # - ルーティング定義
+│       │                      # - ミドルウェア適用
+│       │                      # - エラーハンドリング
 │       ├── routes/
 │       │   ├── upload.ts      # POST /upload (API)
+│       │   │                  # - multipart/form-data 受信
+│       │   │                  # - ZIP展開
+│       │   │                  # - R2書き込み（並列）
+│       │   │                  # - metadata更新（KV）
 │       │   ├── metadata.ts    # GET /pamphlet/:id/metadata
+│       │   │                  # - KVからmetadata取得
+│       │   │                  # - 認証チェック（オプション）
 │       │   └── tile.ts        # GET /pamphlet/:id/page/:p/tile/:x/:y
+│       │                      # - Cache API確認
+│       │                      # - R2取得（cache miss時）
+│       │                      # - Cache保存
 │       ├── pages/
 │       │   └── uploader.tsx   # GET /upload (Hono JSX UI)
+│       │                      # - アップローダー画面レンダリング
+│       │                      # - WASM初期化スクリプト
+│       │                      # - クライアントサイドJS埋め込み
 │       ├── middleware/
-│       │   ├── auth.ts        # JWT/Cookie認証
-│       │   └── cors.ts        # CORS設定
+│       │   ├── auth.ts        # JWT/Cookie認証ミドルウェア
+│       │   │                  # - トークン検証
+│       │   │                  # - ユーザー情報取得
+│       │   └── cors.ts        # CORS設定ミドルウェア
+│       │                      # - オリジン検証
+│       │                      # - プリフライトレスポンス
 │       ├── services/
 │       │   ├── r2.ts          # R2操作ヘルパー
+│       │   │                  # - ファイル書き込み
+│       │   │                  # - ファイル取得
+│       │   │                  # - パス生成ユーティリティ
 │       │   ├── kv.ts          # KV操作ヘルパー
-│       │   └── cache.ts       # Cache API操作
+│       │   │                  # - metadata保存/取得
+│       │   │                  # - version管理
+│       │   └── cache.ts       # Cache API操作ヘルパー
+│       │                      # - カスタムキー生成
+│       │                      # - キャッシュ保存/取得
 │       └── types/
 │           └── bindings.ts    # Workers bindings型定義
+│                              # - Env型（R2_BUCKET, META_KV等）
+│                              # - Variables型
 │
 ├── wasm/                      # Rust/WASM タイル化エンジン
-│   ├── Cargo.toml
-│   ├── Cargo.lock
-│   ├── package.json           # wasm-pack ビルド用
+│   ├── Cargo.toml             # Rust依存関係、crateメタデータ
+│   ├── Cargo.lock             # 依存関係ロックファイル
+│   ├── package.json           # wasm-pack ビルドスクリプト
+│   ├── .gitignore             # pkg/ を除外
 │   └── src/
-│       ├── lib.rs             # wasm-bindgen エントリ
+│       ├── lib.rs             # wasm-bindgen エントリポイント
+│       │                      # - JS公開関数定義
+│       │                      # - モジュール宣言
 │       ├── tiler.rs           # タイル化ロジック
+│       │                      # - 画像デコード
+│       │                      # - タイル分割
+│       │                      # - WebPエンコード
+│       │                      # - 重複排除
 │       └── hasher.rs          # SHA256ハッシュ計算
+│                              # - タイル命名用
+│                              # - 重複検出用
 │   └── pkg/                   # wasm-pack出力先（.gitignore）
+│       ├── *.wasm             # WASMバイナリ
+│       ├── *.js               # JSバインディング
+│       └── *.d.ts             # TypeScript型定義
 │
 ├── frontend/                  # Svelte 5 Web Component (Viewer only)
-│   ├── package.json
-│   ├── vite.config.ts         # Vite設定（Svelte plugin）
-│   ├── tsconfig.json
+│   ├── package.json           # frontend依存関係
+│   ├── vite.config.ts         # Vite設定（Svelte plugin、build設定）
+│   ├── svelte.config.js       # Svelte設定（customElement: true）
+│   ├── tsconfig.json          # TypeScript設定
+│   ├── .gitignore             # dist/ を除外
 │   └── src/
 │       ├── components/
-│       │   └── PamphletViewer.svelte     # <pamphlet-viewer>
+│       │   └── PamphletViewer.svelte
+│       │                      # <pamphlet-viewer> Web Component
+│       │                      # - metadata取得
+│       │                      # - Canvas描画
+│       │                      # - タイル並列取得
+│       │                      # - ページネーション
+│       │                      # - ズーム/パン
 │       ├── lib/
 │       │   ├── tile-loader.ts            # タイル並列取得ロジック
-│       │   ├── canvas-renderer.ts        # Canvas描画
-│       │   └── viewport.ts               # viewport計算
+│       │   │                             # - 優先度キュー管理
+│       │   │                             # - プリフェッチ戦略
+│       │   │                             # - 並列数制御（p-queue）
+│       │   ├── canvas-renderer.ts        # Canvas描画ロジック
+│       │   │                             # - タイル配置計算
+│       │   │                             # - ImageBitmap描画
+│       │   │                             # - 高DPI対応
+│       │   └── viewport.ts               # viewport計算ロジック
+│       │                                 # - 可視タイル特定
+│       │                                 # - スクロール検出
 │       ├── types/
 │       │   └── metadata.ts               # metadata.json型定義
-│       └── main.ts                       # customElements.define()
+│       │                                 # - Metadata, Page, Tile型
+│       └── main.ts                       # エントリポイント
+│                                         # - customElements.define()
+│                                         # - Web Component登録
 │   └── dist/                             # ビルド出力（.gitignore）
+│       └── pamphlet-viewer.js            # 単一バンドル（UMD or ESM）
 │
 └── shared/                    # 共通型定義・ユーティリティ（オプション）
-    ├── package.json
+    ├── package.json           # shared依存関係
+    ├── tsconfig.json          # TypeScript設定
     └── src/
-        └── types/
-            └── metadata.ts    # metadata.json共通型
+        ├── types/
+        │   ├── metadata.ts    # metadata.json共通型（workers/frontendで共有）
+        │   └── api.ts         # API レスポンス型
+        └── utils/
+            └── constants.ts   # 定数（TILE_SIZE等）
 ```
 
-### pnpm-workspace.yaml
+### pnpm workspace設定ファイル
+
+#### pnpm-workspace.yaml
 
 ```yaml
 packages:
@@ -169,6 +239,175 @@ packages:
   - 'frontend'
   - 'shared'
 ```
+
+#### ルート package.json
+
+```json
+{
+  "name": "web-pamphlet-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "InDesign pamphlet viewer with tiling and edge caching",
+  "scripts": {
+    "dev": "pnpm --filter workers dev",
+    "build": "pnpm --filter wasm build && pnpm --filter frontend build && pnpm --filter workers build",
+    "deploy": "pnpm --filter workers deploy",
+    "lint": "pnpm --recursive run lint",
+    "type-check": "pnpm --recursive run type-check"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0",
+    "prettier": "^3.1.0",
+    "eslint": "^8.55.0"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=8"
+  }
+}
+```
+
+### 各ワークスペースのpackage.json例
+
+#### workers/package.json
+
+```json
+{
+  "name": "workers",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20231218.0",
+    "wrangler": "^3.22.0",
+    "typescript": "^5.3.0"
+  }
+}
+```
+
+#### wasm/package.json
+
+```json
+{
+  "name": "wasm",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "wasm-pack build --target web --out-dir pkg",
+    "build:release": "wasm-pack build --release --target web --out-dir pkg",
+    "test": "cargo test"
+  },
+  "devDependencies": {
+    "wasm-pack": "^0.12.0"
+  }
+}
+```
+
+#### frontend/package.json
+
+```json
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0",
+    "p-queue": "^8.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "vite": "^5.0.0",
+    "typescript": "^5.3.0"
+  }
+}
+```
+
+#### shared/package.json
+
+```json
+{
+  "name": "shared",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types/index.ts"
+  },
+  "scripts": {
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+}
+```
+
+### .gitignore
+
+```gitignore
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+pkg/
+target/
+
+# Environment
+.env
+.dev.vars
+.wrangler/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+```
+
+### ワークスペース間の依存関係
+
+```
+shared (共通型定義)
+  ↓ 参照
+workers ← wasm/pkg (WASM配信用)
+  ↓ API提供
+frontend → workers (HTTP経由)
+frontend → wasm/pkg (import)
+```
+
+- **shared**: workers と frontend で共通の型定義を参照（`shared`を依存に追加）
+- **workers**: wasm/pkg をアップローダーUI経由で配信（Workers Assets）
+- **frontend**: wasm/pkg を開発時に `import` して型チェック
+- **API通信**: frontend → workers はHTTP経由（ビルド時依存なし）
 
 ---
 
@@ -700,39 +939,6 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
    pnpm deploy  # wrangler deploy
    # Cloudflare Workers にデプロイ（API + Hono JSX アップローダーUI）
    ```
-
-### CI/CD（GitHub Actions例）
-
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: pnpm/action-setup@v2
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 20
-          cache: pnpm
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-      - run: cargo install wasm-pack
-
-      - run: pnpm install
-      - run: cd wasm && pnpm build
-      - run: cd frontend && pnpm build
-      - run: cd workers && wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-```
 
 ### 本番デプロイ前チェックリスト
 
