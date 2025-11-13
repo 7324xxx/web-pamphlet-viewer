@@ -140,7 +140,7 @@ describe('WASM Performance Benchmarks', () => {
 
         for (let i = 0; i < iterations; i++) {
           const start = performance.now();
-          const result = wasm.tile_image(imageData, 256, quality);
+          wasm.tile_image(imageData, 256, quality);
           const end = performance.now();
           times.push(end - start);
         }

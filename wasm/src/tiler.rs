@@ -1,6 +1,5 @@
 use image::{DynamicImage, ImageBuffer, ImageFormat, Rgba};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 use std::io::Cursor;
 
 use crate::hasher;
@@ -61,9 +60,10 @@ pub fn tile_image(
     let tiles_y = (height + tile_size - 1) / tile_size;
 
     let mut tiles = Vec::new();
-    let mut seen_hashes = HashSet::new();
 
     // 各タイルを生成
+    // 注: 全てのタイルを保持します（重複排除なし）
+    // これにより、フロントエンドで座標→ハッシュのマッピングが容易になります
     for ty in 0..tiles_y {
         for tx in 0..tiles_x {
             // タイルの座標とサイズを計算
@@ -78,13 +78,8 @@ pub fn tile_image(
             // WebP形式にエンコード
             let webp_data = encode_webp(&tile_img, quality.unwrap_or(80.0))?;
 
-            // ハッシュを計算
+            // ハッシュを計算（タイル識別用）
             let hash = hasher::calculate_hash(&webp_data);
-
-            // 重複チェック（同じタイルは一度だけ保存）
-            if !seen_hashes.contains(&hash) {
-                seen_hashes.insert(hash.clone());
-            }
 
             tiles.push(TileInfo {
                 x: tx,
@@ -131,10 +126,13 @@ fn crop_and_pad(
 }
 
 /// 画像をWebP形式にエンコード
+///
+/// 注: 現在、品質パラメータは未サポートです。
+/// image crateのWebPエンコーダーはデフォルト品質を使用します。
 fn encode_webp(img: &DynamicImage, _quality: f32) -> Result<Vec<u8>, String> {
     let mut buffer = Cursor::new(Vec::new());
 
-    // WebPエンコーダを使用
+    // WebPエンコーダを使用（品質パラメータは現在未サポート）
     img.write_to(&mut buffer, ImageFormat::WebP)
         .map_err(|e| format!("Failed to encode WebP: {}", e))?;
 
