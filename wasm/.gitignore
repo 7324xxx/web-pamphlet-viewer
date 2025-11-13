@@ -5,8 +5,13 @@ target/
 # Node modules
 node_modules/
 
+# Test outputs
+output/
+sample.jpg
+
 # Lock files
 Cargo.lock
+package-lock.json
 
 # IDE
 .vscode/

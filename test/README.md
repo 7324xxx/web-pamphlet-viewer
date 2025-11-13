@@ -1,12 +1,30 @@
 # WASM Tiling Engine Test Results
 
-## Test Environment
-- **Platform**: Linux 4.4.0
-- **Node.js**: v20+
-- **Rust**: 1.91.0
-- **wasm-pack**: 0.13.1
+## ⚠️ Tests Moved to wasm/
 
-## Test Results
+**The test suite has been moved to `/wasm/` directory using Vitest.**
+
+To run tests:
+```bash
+cd ../wasm
+npm test
+```
+
+See [wasm/README.md](../wasm/README.md) for detailed test documentation.
+
+---
+
+## Legacy Test Scripts
+
+This directory contains legacy test scripts for reference only:
+- `test-wasm.js` - Original functional test script (44 tests)
+- `performance-test.js` - Original performance test script
+
+These have been replaced by comprehensive Vitest test suites in `wasm/`:
+- `wasm/wasm.test.js` - 27 functional tests
+- `wasm/performance.test.js` - 17 performance tests
+
+## Original Test Results
 
 ### ✅ Functional Tests (test-wasm.js)
 
