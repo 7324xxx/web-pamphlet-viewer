@@ -2,31 +2,10 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import type { WasmModule, JsTileResult, PageInfo } from 'shared/types/wasm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// WASM型定義
-interface JsTileInfo {
-  x: number;
-  y: number;
-  hash: string;
-}
-
-interface JsTileResult {
-  width: number;
-  height: number;
-  tile_size: number;
-  tiles: JsTileInfo[];
-  tile_count(): number;
-  get_tile_data(index: number): Uint8Array;
-}
-
-interface WasmModule {
-  tile_image(imageData: Uint8Array, tileSize: number, quality?: number): JsTileResult;
-  generate_metadata(pagesJson: string, tileSize: number): string;
-  calculate_hash(data: Uint8Array): string;
-}
 
 // WASMモジュールをロード
 let wasm: WasmModule;
@@ -192,13 +171,6 @@ describe('WASM Tiling Engine', () => {
   });
 
   describe('Metadata Generation', () => {
-    interface PageInfo {
-      page: number;
-      width: number;
-      height: number;
-      tiles: Array<{ x: number; y: number; hash: string }>;
-    }
-
     it('should generate valid metadata JSON', () => {
       const result = wasm.tile_image(imageData, tileSize, quality);
       const tiles = result.tiles;

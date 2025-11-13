@@ -2,29 +2,10 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import type { WasmModule } from 'shared/types/wasm';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-// WASM型定義
-interface JsTileInfo {
-  x: number;
-  y: number;
-  hash: string;
-}
-
-interface JsTileResult {
-  width: number;
-  height: number;
-  tile_size: number;
-  tiles: JsTileInfo[];
-  tile_count(): number;
-  get_tile_data(index: number): Uint8Array;
-}
-
-interface WasmModule {
-  tile_image(imageData: Uint8Array, tileSize: number, quality?: number): JsTileResult;
-}
 
 let wasm: WasmModule;
 
