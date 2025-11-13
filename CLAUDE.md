@@ -7,7 +7,7 @@ InDesignなどのDTP成果物を、高速かつセキュアにWeb上で閲覧で
 ### 主要コンポーネント
 
 1. **Rust/WASM タイル化エンジン** - ブラウザ上で画像をタイル分割
-2. **Cloudflare Workers API (Hono)** - R2直接アクセス、Cache API統合、認証、アップローダーUI（Hono JSX）
+2. **Cloudflare Workers API (Hono)** - R2直接アクセス、Cache API統合、アップローダーUI（Hono JSX）
 3. **Svelte 5 Web Component** - 再利用可能なビューア（`<pamphlet-viewer>`）
 
 ---
@@ -25,7 +25,6 @@ Rust/WASM（ブラウザ内）
   - metadata.json生成
   ↓ ZIP/タイル群 + metadata
 Workers /upload エンドポイント
-  - 認証チェック（JWT/Cookie）
   - ZIP展開
   - R2へ書き込み: pamphlets/{id}/page-{n}/tile-{x}-{y}.webp
   - KVへmetadata保存: meta:{id}
@@ -41,7 +40,6 @@ R2 + KV に永続化
   ↓ GET /pamphlet/:id/metadata
 Workers
   - KVから metadata.json 取得
-  - 認証チェック（オプション）
   ↓ metadata（pages配列、tile_size、version等）を返す
 ブラウザ
   - Canvas初期化
@@ -77,9 +75,8 @@ Workers
 
 **本システムの解決策:**
 
-- **Workers内で署名検証 + キャッシュ可能なURLを提供**
+- **Workers内でキャッシュ可能なURLを提供**
   - クライアントには「署名が含まれない、同一のURL」を配布（例: `/pamphlet/{id}/page/{p}/tile/{x}/{y}`）
-  - Workers側で認証・認可を実施（Cookie/JWT、または閲覧権限チェック）
   - Workers が R2 から取得したレスポンスを Cache API に保存
   - 2回目以降はエッジキャッシュからHIT → レイテンシ30ms以下に改善
 
@@ -126,7 +123,6 @@ web-pamphlet-viewer/
 │       │   │                  # - metadata更新（KV）
 │       │   ├── metadata.ts    # GET /pamphlet/:id/metadata
 │       │   │                  # - KVからmetadata取得
-│       │   │                  # - 認証チェック（オプション）
 │       │   └── tile.ts        # GET /pamphlet/:id/page/:p/tile/:x/:y
 │       │                      # - Cache API確認
 │       │                      # - R2取得（cache miss時）
@@ -137,9 +133,6 @@ web-pamphlet-viewer/
 │       │                      # - WASM初期化スクリプト
 │       │                      # - クライアントサイドJS埋め込み
 │       ├── middleware/
-│       │   ├── auth.ts        # JWT/Cookie認証ミドルウェア
-│       │   │                  # - トークン検証
-│       │   │                  # - ユーザー情報取得
 │       │   └── cors.ts        # CORS設定ミドルウェア
 │       │                      # - オリジン検証
 │       │                      # - プリフライトレスポンス
@@ -420,7 +413,6 @@ frontend → wasm/pkg (import)
 - R2への読み書き（直接バインディング経由）
 - Workers KVでのmetadata管理
 - Cache API（caches.default）を使ったエッジキャッシュ
-- 認証・認可（JWT/Cookie）
 - CORS設定
 
 #### 実装方針
@@ -428,12 +420,10 @@ frontend → wasm/pkg (import)
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
 - KV namespace: `pamphlet-metadata` をバインディング `META_KV` として設定
-- Secrets: JWT_SECRET（認証用）
 
 **主要エンドポイント**
 
 1. `GET /upload` (Hono JSX UI)
-   - 認証: JWT/Cookie必須（管理者のみ）
    - Hono JSXでアップローダーUIをレンダリング
    - 画面内容:
      - ドラッグ&ドロップエリア（複数画像対応）
@@ -448,7 +438,6 @@ frontend → wasm/pkg (import)
    - レスポンス: HTML（Hono JSX）
 
 2. `POST /upload` (API)
-   - 認証: JWT/Cookie必須（管理者のみ）
    - ペイロード: multipart/form-data（ZIP）またはJSON（タイル配列+metadata）
    - 処理:
      - ZIP展開（ZIP形式の場合）
@@ -458,12 +447,10 @@ frontend → wasm/pkg (import)
    - レスポンス: `{ id, version, status: 'ok' }`
 
 3. `GET /pamphlet/:id/metadata`
-   - 認証: オプション（運用方針による）
    - KVから `meta:{id}` を取得
    - レスポンス: metadata.json（pages配列、tile_size、version、dimensions等）
 
 4. `GET /pamphlet/:id/page/:page/tile/:x/:y`
-   - 認証: オプション（運用方針による）
    - キャッシュキー生成: `pamphlet:{id}:p{page}:x{x}:y{y}:v{version}`
      - versionはmetadataから取得
    - Cache APIチェック（caches.default.match(cacheKey)）
@@ -478,52 +465,8 @@ frontend → wasm/pkg (import)
    - レスポンス: 画像バイナリ（WebP）
 
 5. `POST /pamphlet/:id/invalidate` (管理用)
-   - 認証: 管理者のみ
    - metadata.versionをインクリメント
    - レスポンス: `{ version }`
-
-**認証戦略（キャッシュとの両立）**
-
-- アップロード: JWT（Authorization: Bearer token）またはCookie（httpOnly、secure）
-
-- タイル取得の認証パターン:
-
-  - **パターンA（推奨）: metadata認証 + タイルは公開キャッシュ**
-    - metadata取得時にのみ認証（Cookie/JWT）
-    - 閲覧権限チェック: KVに `access:{pamphletId}` → `[user_id_list]` を保存
-    - 認証成功後、クライアントは同一URLでタイル取得可能
-    - タイルURLは推測困難なID（UUID）を使用してセキュリティ確保
-    - メリット: 完全なキャッシュ活用、最高のパフォーマンス
-
-  - **パターンB: タイルURLに一時トークン埋め込み**
-    - metadata取得時に短期トークン（例: 1時間有効のJWT）を発行
-    - タイルURL: `/pamphlet/{id}/page/{p}/tile/{x}/{y}?token={jwt}`
-    - Workers側でトークン検証後、**キャッシュキーから`token`を除外**
-    - キャッシュキー: `pamphlet:{id}:p{p}:x{x}:y{y}:v{ver}` （tokenパラメータ含まない）
-    - Cache API操作:
-      ```typescript
-      // tokenを検証した後、キャッシュキーは同一にする
-      const cacheKey = new Request(
-        `https://dummy/${id}/${page}/${x}/${y}/${version}`
-      );
-      const cached = await cache.match(cacheKey);
-      if (cached) return cached;
-      // ... R2取得 ...
-      await cache.put(cacheKey, response.clone());
-      ```
-    - メリット: セキュリティとキャッシュの両立
-    - デメリット: トークン検証のオーバーヘッド（~1ms）
-
-  - **パターンC（非推奨）: 認証ヘッダ必須**
-    - 毎回AuthorizationヘッダでJWTチェック
-    - ⚠️ 問題: `Vary: Authorization` ヘッダが必要 → CDNキャッシュが効かない
-    - 結果: 署名付きURLと同じ問題が発生
-    - 回避不可: キャッシュを諦めるか、パターンA/Bを採用
-
-**推奨アプローチ:**
-- 社内限定・機密性の低いコンテンツ: **パターンA**
-- 機密性の高いコンテンツ: **パターンB**（トークン期限を短く設定）
-- パターンCは避ける（キャッシュメリットが失われる）
 
 **キャッシュ無効化戦略**
 
@@ -553,7 +496,6 @@ frontend → wasm/pkg (import)
     - ZIP生成（JSZip CDN or Workers経由）
     - `POST /upload` に multipart 送信
   - スタイル: インラインCSS or Workers Assets（静的ファイル配信）
-  - 認証: Cookie or JWT で保護、middleware で確認
   - レイアウト:
     ```tsx
     export const UploaderPage = () => (
@@ -665,7 +607,6 @@ frontend → wasm/pkg (import)
 
 - `pamphlet-id`: string（必須）
 - `api-base`: string（Workers URL、デフォルト `''`）
-- `auth-token`: string（認証が必要な場合）
 
 **機能**
 
@@ -780,10 +721,10 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 
 ### 署名付きURLとの比較
 
-| 方式 | キャッシュ | レイテンシ | セキュリティ | 実装複雑度 |
-|------|-----------|-----------|-------------|----------|
-| **R2署名付きURL** | ❌ 不可<br>（URLが毎回異なる） | 🐢 800ms+<br>（常にR2アクセス） | ⚠️ URL漏洩リスク<br>（有効期限内は誰でも） | ⭕ シンプル<br>（R2のAPIのみ） |
-| **Workers + Cache API<br>（本システム）** | ✅ 可能<br>（同一URL） | ⚡ 30ms以下<br>（エッジキャッシュ） | ✅ Workers認証<br>（Cookie/JWT検証） | 🔶 中程度<br>（Workers実装必要） |
+| 方式 | キャッシュ | レイテンシ | 実装複雑度 |
+|------|-----------|-----------|----------|
+| **R2署名付きURL** | ❌ 不可<br>（URLが毎回異なる） | 🐢 800ms+<br>（常にR2アクセス） | ⭕ シンプル<br>（R2のAPIのみ） |
+| **Workers + Cache API<br>（本システム）** | ✅ 可能<br>（同一URL） | ⚡ 30ms以下<br>（エッジキャッシュ） | 🔶 中程度<br>（Workers実装必要） |
 
 ### パフォーマンス期待値
 
@@ -802,55 +743,6 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 - タイルは静的コンテンツ
 - 同一パンフレットは複数ユーザーが閲覧する想定
 - 結果: R2へのリクエスト数を1/20に削減可能
-
----
-
-## セキュリティ・認証
-
-### アップロード（管理者のみ）
-
-**認証方式: JWT**
-
-- フロント（管理画面）でログイン → JWTをlocalStorageに保存
-- `<pamphlet-uploader auth-token={jwt}>` で渡す
-- Workers `/upload` エンドポイントで `Authorization: Bearer {jwt}` をチェック
-- JWT検証: `JWT_SECRET`（Workers Secrets）で署名検証
-- ペイロード: `{ user_id, role: 'admin', exp }`
-
-**または Cookie ベース**
-
-- httpOnly, secure Cookie
-- Workers で Cookie解析 → セッションKVで検証
-
-### タイル取得（閲覧者）
-
-**推奨: metadata取得時に認証、タイルは公開**
-
-- `GET /pamphlet/:id/metadata` で認証チェック
-  - JWTまたはCookie検証
-  - 閲覧権限チェック（KVに `access:{id}` → `[user_id_list]` を保存）
-- metadata取得成功 → タイルURLは認証不要で取得可能
-  - タイルURLにIDが含まれるが、IDは推測困難（UUID使用）
-  - Workers Cache APIで高速配信
-
-**オプション: タイル取得時も認証**
-
-- タイルリクエスト時にJWTチェック
-- ただし `Authorization` ヘッダ付きレスポンスはCDNキャッシュされにくい
-- 回避策: Workers内で認証後、ヘッダを外した公開レスポンスを Cache APIに保存
-
-### CORS
-
-- Workers で CORS ヘッダ設定
-- `Access-Control-Allow-Origin`: 閲覧アプリのオリジン（wildcard避ける）
-- `Access-Control-Allow-Credentials: true`（Cookie認証の場合）
-
-### その他
-
-- **Rate Limiting**: Workers でIP/user_id ベースのレート制限（KVで実装）
-- **Logging**: アクセスログをWorkers Analytics or Logpushで記録
-- **暗号化**: R2バケットは非公開設定、Workers経由のみアクセス
-- **Secrets管理**: `wrangler secret put JWT_SECRET`
 
 ---
 
@@ -906,13 +798,6 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
    # wrangler.toml に ID を追記
    ```
 
-6. **Secrets設定**
-   ```bash
-   cd workers
-   wrangler secret put JWT_SECRET
-   # プロンプトでシークレット入力
-   ```
-
 ---
 
 ## ビルド・デプロイフロー
@@ -943,7 +828,6 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 ### 本番デプロイ前チェックリスト
 
 - [ ] R2/KVバインディングが本番環境に設定されているか
-- [ ] JWT_SECRET が設定されているか
 - [ ] CORS設定が正しいオリジンに限定されているか
 - [ ] wrangler.toml の `workers_dev = false` に設定
 - [ ] Custom Domain設定（例: `api.pamphlet.example.com`）
@@ -961,20 +845,7 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
   - `cache.put()` はメモリでレスポンスをバッファリング → 大量同時実行時はメモリ注意
   - **キャッシュキーは完全一致**が必須:
     - URLのクエリパラメータも含まれる
-    - 認証トークンをクエリに含める場合、**カスタムキャッシュキー**を使用
     - 例: `new Request('https://dummy/pamphlet/abc/tile/0/0')` をキーにして `cache.match()` / `cache.put()`
-  - **キャッシュ可能な署名付きURL実装のコツ**:
-    - リクエストURL（クライアントから）とキャッシュキー（Workers内部）を分離
-    - クライアント: `/tile?token=xyz` → Workers: キャッシュキー `/tile` （token除外）
-    - 実装例:
-      ```typescript
-      const url = new URL(request.url);
-      const token = url.searchParams.get('token'); // 認証用
-      // 認証検証...
-      url.searchParams.delete('token'); // キャッシュキーからは除外
-      const cacheKey = new Request(url.toString());
-      const cached = await caches.default.match(cacheKey);
-      ```
 
 - **R2バインディング**
   - `R2_BUCKET.get(key)` はReadableStreamを返す
@@ -1055,17 +926,16 @@ pamphlet:{pamphletId}:p{pageNumber}:x{tileX}:y{tileY}:v{version}
 11. PamphletViewer.svelte 実装（Canvas描画、タイル取得）
 12. Web Component化・ビルド確認
 
-### Phase 4: 統合・認証
-13. JWT認証実装（Workers middleware）
-14. /upload エンドポイント実装（ZIP展開、R2書き込み）
-15. CORS・セキュリティ設定
-16. エラーハンドリング・ログ
+### Phase 4: 統合
+13. /upload エンドポイント実装（ZIP展開、R2書き込み）
+14. CORS設定
+15. エラーハンドリング・ログ
 
 ### Phase 5: 最適化・テスト
-17. キャッシュ戦略テスト（version無効化確認）
-18. パフォーマンステスト（並列数調整）
-19. ブラウザ互換性テスト（Chrome, Firefox, Safari）
-20. ドキュメント整備
+16. キャッシュ戦略テスト（version無効化確認）
+17. パフォーマンステスト（並列数調整）
+18. ブラウザ互換性テスト（Chrome, Firefox, Safari）
+19. ドキュメント整備
 
 ---
 
