@@ -47,14 +47,14 @@ async function testWasm() {
         }
         console.log();
 
-        // タイルをファイルに保存（最初の3つのみ）
-        console.log('=== Saving Sample Tiles ===');
+        // タイルをファイルに保存
+        console.log('=== Saving All Tiles ===');
         const outputDir = path.join(__dirname, 'output');
         if (!fs.existsSync(outputDir)) {
             fs.mkdirSync(outputDir, { recursive: true });
         }
 
-        for (let i = 0; i < Math.min(3, result.tile_count()); i++) {
+        for (let i = 0; i < result.tile_count(); i++) {
             const tile = tiles[i];
             const tileData = result.get_tile_data(i);
             const filename = `tile-${tile.x}-${tile.y}-${tile.hash.substring(0, 8)}.webp`;
