@@ -1,0 +1,23 @@
+{
+  "name": "wasm",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "wasm-pack build --target nodejs --out-dir pkg",
+    "build:release": "wasm-pack build --release --target web --out-dir pkg",
+    "test": "npm run build && vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:cargo": "cargo test"
+  },
+  "dependencies": {
+    "shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.9",
+    "@vitest/ui": "^2.1.8",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "web-pamphlet-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "InDesign pamphlet viewer with tiling and edge caching",
+  "scripts": {
+    "test": "pnpm --filter wasm test",
+    "build": "pnpm --filter wasm build",
+    "type-check": "pnpm --recursive run type-check"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=8"
+  }
+}
