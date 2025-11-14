@@ -1,19 +1,20 @@
 /**
- * Metadata Route Handler
- * GET /pamphlet/:id/metadata
+ * Metadata Router
+ * Routes under /pamphlet
  */
 
-import { Context } from 'hono';
+import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as kvService from '../services/kv';
 import { getMetadataCacheHeaders } from '../services/cache';
 
+const metadata = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 /**
+ * GET /:id/metadata
  * Get pamphlet metadata
- * @param c Hono context
- * @returns Response with metadata JSON
  */
-export async function getMetadata(c: Context<{ Bindings: Env; Variables: Variables }>) {
+metadata.get('/:id/metadata', async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -22,17 +23,19 @@ export async function getMetadata(c: Context<{ Bindings: Env; Variables: Variabl
 
   try {
     // Get metadata from KV
-    const metadata = await kvService.getMetadata(c.env, pamphletId);
+    const metadataData = await kvService.getMetadata(c.env, pamphletId);
 
-    if (!metadata) {
+    if (!metadataData) {
       return c.json({ error: 'Pamphlet not found' }, 404);
     }
 
     // Return metadata with cache headers
     const headers = getMetadataCacheHeaders();
-    return c.json(metadata, 200, headers as Record<string, string>);
+    return c.json(metadataData, 200, headers as Record<string, string>);
   } catch (error) {
     console.error('Error fetching metadata:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-}
+});
+
+export default metadata;

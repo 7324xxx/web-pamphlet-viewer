@@ -8,11 +8,11 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import type { Env, Variables } from './types/bindings';
 
-// Route handlers
-import { getMetadata } from './routes/metadata';
-import { getTile } from './routes/tile';
-import { handleUpload } from './routes/upload';
-import { invalidateCache } from './routes/invalidate';
+// Import routers
+import metadata from './routes/metadata';
+import tile from './routes/tile';
+import upload from './routes/upload';
+import invalidate from './routes/invalidate';
 
 // Create Hono app with type definitions
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -38,19 +38,11 @@ app.get('/', (c) => {
   });
 });
 
-// API Routes
-
-// Get pamphlet metadata
-app.get('/pamphlet/:id/metadata', getMetadata);
-
-// Get tile image
-app.get('/pamphlet/:id/page/:page/tile/:x/:y', getTile);
-
-// Upload pamphlet
-app.post('/upload', handleUpload);
-
-// Invalidate cache (update version)
-app.post('/pamphlet/:id/invalidate', invalidateCache);
+// Mount routers
+app.route('/pamphlet', metadata);
+app.route('/pamphlet', tile);
+app.route('/pamphlet', invalidate);
+app.route('/', upload);
 
 // 404 handler
 app.notFound((c) => {

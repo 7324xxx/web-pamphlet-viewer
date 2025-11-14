@@ -1,19 +1,20 @@
 /**
- * Invalidate Route Handler
- * POST /pamphlet/:id/invalidate
+ * Invalidate Router
+ * Routes under /pamphlet
  */
 
-import { Context } from 'hono';
+import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as kvService from '../services/kv';
 import * as r2Service from '../services/r2';
 
+const invalidate = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 /**
+ * POST /:id/invalidate
  * Invalidate pamphlet cache by updating version
- * @param c Hono context
- * @returns Response with new version number
  */
-export async function invalidateCache(c: Context<{ Bindings: Env; Variables: Variables }>) {
+invalidate.post('/:id/invalidate', async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -40,4 +41,6 @@ export async function invalidateCache(c: Context<{ Bindings: Env; Variables: Var
     console.error('Error invalidating cache:', error);
     return c.json({ error: 'Internal server error', message: String(error) }, 500);
   }
-}
+});
+
+export default invalidate;

@@ -1,20 +1,21 @@
 /**
- * Tile Route Handler
- * GET /pamphlet/:id/page/:page/tile/:x/:y
+ * Tile Router
+ * Routes under /pamphlet
  */
 
-import { Context } from 'hono';
+import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import * as kvService from '../services/kv';
 import * as r2Service from '../services/r2';
 import { getTileCacheKey, getTileFromCache, putTileIntoCache, getTileCacheHeaders } from '../services/cache';
 
+const tile = new Hono<{ Bindings: Env; Variables: Variables }>();
+
 /**
+ * GET /:id/page/:page/tile/:x/:y
  * Get tile image
- * @param c Hono context
- * @returns Response with tile image (WebP)
  */
-export async function getTile(c: Context<{ Bindings: Env; Variables: Variables }>) {
+tile.get('/:id/page/:page/tile/:x/:y', async (c) => {
   const pamphletId = c.req.param('id');
   const pageStr = c.req.param('page');
   const xStr = c.req.param('x');
@@ -75,4 +76,6 @@ export async function getTile(c: Context<{ Bindings: Env; Variables: Variables }
     console.error('Error fetching tile:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
-}
+});
+
+export default tile;

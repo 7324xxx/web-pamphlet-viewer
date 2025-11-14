@@ -1,13 +1,15 @@
 /**
- * Upload Route Handler
+ * Upload Router
  * POST /upload
  */
 
-import { Context } from 'hono';
+import { Hono, Context } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata, PageInfo } from 'shared/types/wasm';
 import * as kvService from '../services/kv';
 import * as r2Service from '../services/r2';
+
+const upload = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * Upload Request Body (JSON format)
@@ -19,11 +21,10 @@ interface UploadRequestBody {
 }
 
 /**
- * Handle upload request
- * @param c Hono context
- * @returns Response with upload result
+ * POST /upload
+ * Handle upload request (JSON or multipart)
  */
-export async function handleUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
+upload.post('/upload', async (c) => {
   try {
     const contentType = c.req.header('Content-Type') || '';
 
@@ -42,11 +43,10 @@ export async function handleUpload(c: Context<{ Bindings: Env; Variables: Variab
     console.error('Error handling upload:', error);
     return c.json({ error: 'Internal server error', message: String(error) }, 500);
   }
-}
+});
 
 /**
  * Handle JSON upload (metadata only)
- * @param c Hono context
  */
 async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
   const body = await c.req.json<UploadRequestBody>();
@@ -77,7 +77,6 @@ async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables
 
 /**
  * Handle multipart upload (with tile files)
- * @param c Hono context
  */
 async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
   const formData = await c.req.formData();
@@ -139,3 +138,5 @@ async function handleMultipartUpload(c: Context<{ Bindings: Env; Variables: Vari
     status: 'ok',
   });
 }
+
+export default upload;
