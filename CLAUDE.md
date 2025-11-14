@@ -35,35 +35,25 @@ R2 に永続化
 ### データフロー（閲覧時）
 
 ```
-管理者
-  ↓ POST /pamphlet/:id/generate-token（管理者操作）
+ブラウザ（閲覧者）- 公開アクセス、認証不要
+  ↓ GET /pamphlet/:id/metadata
 Workers
-  - pamphlet存在確認
-  - HMAC-SHA256署名付きトークン生成（時間ベース）
-  ↓ token（timestamp.signature形式）
-管理者 → 閲覧者にトークン配布
-
-ブラウザ（閲覧者）
-  ↓ GET /pamphlet/:id/metadata (Authorization: Bearer {token})
-Workers
-  - トークン検証（HMAC署名確認、有効期限チェック）
   - R2から metadata.json 取得 (pamphlets/{id}/metadata.json)
   ↓ metadata（pages配列、tile_size、version、各タイルのhash情報）を返す
 ブラウザ
   - Canvas初期化
   - viewport計算 → 必要タイル特定
   - metadataから座標に対応するhashを取得
-  ↓ GET /pamphlet/:id/tile/:hash?token={token} （並列リクエスト）
+  ↓ GET /pamphlet/:id/tile/:hash （並列リクエスト）
 Workers
-  - トークン検証（HMAC署名確認、有効期限チェック）
   - R2から metadata.json 取得してversion番号を確認
   - Cache API チェック（caches.default）
     - キャッシュキー: pamphlet:{id}:tile:{hash}:v{version}
-  - HIT → 即座に返す
+  - HIT → 即座に返す（エッジキャッシュ、レイテンシ 10-30ms）
   - MISS → R2バインディングで取得
     - パス: pamphlets/{id}/tiles/{hash}.webp
     - Content-Type: image/webp
-    - Cache-Control: public, max-age=86400
+    - Cache-Control: public, max-age=86400, s-maxage=2592000
     - Cache APIに put（エッジキャッシュ）
   ↓ タイル画像（WebP）
 ブラウザ
@@ -101,24 +91,26 @@ Workers
   - metadata.versionをキャッシュキーに含めることで、再アップロード時に古いキャッシュを即座に無効化（cacheキーが変わる）
   - Purge API不要、実装がシンプル
 
-- **ハッシュベースURL + 署名付きトークンによるセキュリティ**:
+- **ハッシュベースURLによる限定的セキュリティ**:
   - **ハッシュベースURL**: タイルURLが座標から推測不可能（`/tile/:hash`）
     - 座標ベース（`/tile/:x/:y`）だと連番でアクセス可能 → ハッシュベースで防止
-  - **署名付きトークン認証**: HMAC-SHA256ベースのトークンで全エンドポイントを保護
-    - トークンは時間ベースのバケット方式（デフォルト5分）でキャッシュ可能性を維持
-    - 有効期限設定可能（デフォルト1時間）
-    - 認証されたユーザーのみがmetadataとタイルにアクセス可能
-  - **多層防御**:
-    1. トークンなしではmetadataにアクセス不可 → タイルhash情報が取得できない
-    2. トークンなしではタイルにアクセス不可 → 仮にhashを知っていてもダウンロード不可
-    3. ハッシュベースURLで推測攻撃を防止
-  - **注意**: 認証されたユーザーによる機械的ダウンロードは技術的に防げない
-    - metadataに全タイルのhash情報が含まれるため、正規のトークンを持つユーザーは全タイルにアクセス可能
-    - 追加対策: Rate Limiting、利用規約、透かし等を検討
+    - ただし、metadataは公開されており、全タイルのhash情報が含まれる
+  - **公開アクセス方式**:
+    - 全てのエンドポイント（metadata、tile）は認証不要で公開
+    - 用途: パンフレット、カタログ等の公開コンテンツ配信
+    - 機械的ダウンロードは技術的に防げない（許容する設計）
+  - **オプション: 機械的アクセス対策**:
+    1. **Rate Limiting** (Cloudflare標準機能): 1IPあたり秒間リクエスト数制限（例: 10req/sec）
+    2. **Referrer/Origin チェック**: 特定ドメインからのみアクセス許可（ただし偽装可能）
+    3. **Cloudflare Bot Management** (有料): 機械的アクセス検出・制限、人間のブラウザは許可
+    4. **コンテンツ保護**: 透かし、低解像度版の配布、利用規約による規制
+  - **管理エンドポイント保護**:
+    - `POST /pamphlet/:id/invalidate` はCloudflare Access、API key等で保護推奨
+    - アップロードエンドポイントも同様に保護
 
 **参考**:
-- Cloudflare Meetup 2023の「キャッシュ可能な署名付きURL」パターン（Oliver氏）に基づく設計
-- 時間ベースのトークンバケット方式により、署名付きでもキャッシュ可能
+- Cloudflare Meetup 2023の「キャッシュ可能な署名付きURL」パターン（Oliver氏）を参考にキャッシュ設計を最適化
+- 公開コンテンツ配信のため、認証は削除してシンプルな設計に
 
 ---
 
@@ -450,7 +442,6 @@ frontend → wasm/pkg (import)
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
 - KV namespace: 将来的な用途のため予約（現在は未使用）
-- Secret: `SECRET_KEY` を設定（HMAC署名用、`.dev.vars` または `wrangler secret put`）
 
 **主要エンドポイント**
 
@@ -477,29 +468,18 @@ frontend → wasm/pkg (import)
      - metadata.versionを生成（timestamp）
    - レスポンス: `{ id, version, status: 'ok' }`
 
-3. `POST /pamphlet/:id/generate-token` (トークン生成)
-   - **認証**: 本番環境では追加の管理者認証が必要（API key等）
-   - リクエストボディ（オプション）: `{ expiresIn: 3600 }` （秒単位、デフォルト3600=1時間）
-   - 処理:
-     - pamphlet存在確認
-     - HMAC-SHA256署名付きトークン生成（時間ベースのバケット方式）
-     - トークン形式: `{timestamp}.{signature}`
-   - レスポンス: `{ pamphletId, token, expiresIn, expiresAt }`
-   - 用途: 生成されたトークンを閲覧者に配布（URLパラメータまたはAuthorizationヘッダ）
-
-4. `GET /pamphlet/:id/metadata`
-   - **認証**: 署名付きトークン必須（`Authorization: Bearer {token}` または `?token={token}`）
-   - トークン検証: HMAC署名確認、有効期限チェック
+3. `GET /pamphlet/:id/metadata`
+   - **公開アクセス**: 認証不要
    - R2から `pamphlets/{id}/metadata.json` を取得
    - レスポンス: metadata.json（pages配列、tile_size、version、各タイルのhash情報等）
+   - Cache-Control: `private, max-age=60`
 
-5. `GET /pamphlet/:id/tile/:hash`
-   - **認証**: 署名付きトークン必須（`Authorization: Bearer {token}` または `?token={token}`）
+4. `GET /pamphlet/:id/tile/:hash`
+   - **公開アクセス**: 認証不要
    - ハッシュ形式検証: 64文字の16進数（SHA256）
-   - トークン検証: HMAC署名確認、有効期限チェック
    - キャッシュキー生成: `pamphlet:{id}:tile:{hash}:v{version}`（versionはmetadataから取得）
    - Cache APIチェック（caches.default.match(cacheKey)）
-   - HIT → 即座に返す
+   - HIT → 即座に返す（エッジキャッシュ、10-30ms）
    - MISS:
      - R2バインディングで取得: `R2_BUCKET.get('pamphlets/{id}/tiles/{hash}.webp')`
      - レスポンスヘッダ:
@@ -508,8 +488,8 @@ frontend → wasm/pkg (import)
      - Cache APIに保存: `cache.put(cacheKey, response.clone())`
    - レスポンス: 画像バイナリ（WebP）
 
-6. `POST /pamphlet/:id/invalidate` (管理用)
-   - **認証**: 署名付きトークン必須
+5. `POST /pamphlet/:id/invalidate` (管理用)
+   - **管理エンドポイント**: Cloudflare Access、API key等で保護推奨
    - R2からmetadata.jsonを取得
    - metadata.versionを更新（新しいtimestamp）
    - 更新したmetadata.jsonをR2に保存

@@ -23,12 +23,6 @@ export interface Env {
    * Environment variable
    */
   ENVIRONMENT?: string;
-
-  /**
-   * Secret key for HMAC token signing
-   * Should be set in wrangler.toml [vars] or .dev.vars
-   */
-  SECRET_KEY?: string;
 }
 
 /**

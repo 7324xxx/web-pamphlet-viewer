@@ -5,26 +5,22 @@
 
 import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
-import type { Metadata } from 'shared/types/wasm';
 import * as r2Service from '../services/r2';
 import { getTileCacheHeaders, getMetadataCacheHeaders } from '../services/cache';
-import { requireToken } from '../middleware/auth';
 import { loadMetadata } from '../middleware/metadata';
 import { tileCache } from '../middleware/cache';
-import { generateToken } from '../services/token';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * GET /:id/metadata
  * Get pamphlet metadata from R2
- * Requires token authentication
+ * Public access - no authentication required
  *
  * Middleware stack:
- * - requireToken: Validates authentication token
  * - loadMetadata: Loads pamphlet metadata into context
  */
-pamphlet.get('/:id/metadata', requireToken, loadMetadata, async (c) => {
+pamphlet.get('/:id/metadata', loadMetadata, async (c) => {
   // Get metadata from context (loaded by loadMetadata middleware)
   const metadata = c.get('metadata');
 
@@ -36,14 +32,13 @@ pamphlet.get('/:id/metadata', requireToken, loadMetadata, async (c) => {
 /**
  * GET /:id/tile/:hash
  * Get tile image with Cache API integration (hash-based)
- * Requires token authentication
+ * Public access - no authentication required
  *
  * Middleware stack:
- * - requireToken: Validates authentication token
  * - loadMetadata: Loads pamphlet metadata into context
  * - tileCache: Checks cache and stores response
  */
-pamphlet.get('/:id/tile/:hash', requireToken, loadMetadata, tileCache, async (c) => {
+pamphlet.get('/:id/tile/:hash', loadMetadata, tileCache, async (c) => {
   const pamphletId = c.req.param('id');
   const hash = c.req.param('hash');
 
@@ -81,13 +76,13 @@ pamphlet.get('/:id/tile/:hash', requireToken, loadMetadata, tileCache, async (c)
 /**
  * POST /:id/invalidate
  * Invalidate pamphlet cache by updating version in R2
- * Requires token authentication
+ * Admin endpoint - should be protected by additional authentication in production
+ * (e.g., Cloudflare Access, API key, etc.)
  *
  * Middleware stack:
- * - requireToken: Validates authentication token
  * - loadMetadata: Loads pamphlet metadata into context
  */
-pamphlet.post('/:id/invalidate', requireToken, loadMetadata, async (c) => {
+pamphlet.post('/:id/invalidate', loadMetadata, async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -117,49 +112,6 @@ pamphlet.post('/:id/invalidate', requireToken, loadMetadata, async (c) => {
     });
   } catch (error) {
     console.error('Error invalidating cache:', error);
-    return c.json({ error: 'Internal server error', message: String(error) }, 500);
-  }
-});
-
-/**
- * POST /:id/generate-token
- * Generate signed token for pamphlet access
- * This endpoint should be protected by additional authentication in production
- * (e.g., API key, admin auth)
- *
- * Middleware stack:
- * - loadMetadata: Loads pamphlet metadata into context (validates pamphlet exists)
- */
-pamphlet.post('/:id/generate-token', loadMetadata, async (c) => {
-  const pamphletId = c.req.param('id');
-
-  if (!pamphletId) {
-    return c.json({ error: 'Missing pamphlet ID' }, 400);
-  }
-
-  // Optional: Get expiresIn from request body
-  let expiresIn = 3600; // Default: 1 hour
-  try {
-    const body = await c.req.json().catch(() => ({}));
-    if (body.expiresIn && typeof body.expiresIn === 'number') {
-      expiresIn = body.expiresIn;
-    }
-  } catch {
-    // Use default
-  }
-
-  try {
-    // Generate token (pamphlet existence already verified by loadMetadata middleware)
-    const token = await generateToken(c.env, pamphletId, expiresIn);
-
-    return c.json({
-      pamphletId,
-      token,
-      expiresIn,
-      expiresAt: Date.now() + expiresIn * 1000,
-    });
-  } catch (error) {
-    console.error('Error generating token:', error);
     return c.json({ error: 'Internal server error', message: String(error) }, 500);
   }
 });
