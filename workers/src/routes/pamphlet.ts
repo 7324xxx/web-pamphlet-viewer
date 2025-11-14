@@ -7,14 +7,10 @@ import { Hono } from 'hono';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata } from 'shared/types/wasm';
 import * as r2Service from '../services/r2';
-import {
-  getTileCacheKey,
-  getTileFromCache,
-  putTileIntoCache,
-  getTileCacheHeaders,
-  getMetadataCacheHeaders
-} from '../services/cache';
+import { getTileCacheHeaders, getMetadataCacheHeaders } from '../services/cache';
 import { requireToken } from '../middleware/auth';
+import { loadMetadata } from '../middleware/metadata';
+import { tileCache } from '../middleware/cache';
 import { generateToken } from '../services/token';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -23,37 +19,31 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
  * GET /:id/metadata
  * Get pamphlet metadata from R2
  * Requires token authentication
+ *
+ * Middleware stack:
+ * - requireToken: Validates authentication token
+ * - loadMetadata: Loads pamphlet metadata into context
  */
-pamphlet.get('/:id/metadata', requireToken, async (c) => {
-  const pamphletId = c.req.param('id');
+pamphlet.get('/:id/metadata', requireToken, loadMetadata, async (c) => {
+  // Get metadata from context (loaded by loadMetadata middleware)
+  const metadata = c.get('metadata');
 
-  if (!pamphletId) {
-    return c.json({ error: 'Missing pamphlet ID' }, 400);
-  }
-
-  try {
-    // Get metadata from R2
-    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
-
-    if (!metadata) {
-      return c.json({ error: 'Pamphlet not found' }, 404);
-    }
-
-    // Return metadata with cache headers
-    const headers = getMetadataCacheHeaders();
-    return c.json(metadata, 200, headers as Record<string, string>);
-  } catch (error) {
-    console.error('Error fetching metadata:', error);
-    return c.json({ error: 'Internal server error' }, 500);
-  }
+  // Return metadata with cache headers
+  const headers = getMetadataCacheHeaders();
+  return c.json(metadata, 200, headers as Record<string, string>);
 });
 
 /**
  * GET /:id/tile/:hash
  * Get tile image with Cache API integration (hash-based)
  * Requires token authentication
+ *
+ * Middleware stack:
+ * - requireToken: Validates authentication token
+ * - loadMetadata: Loads pamphlet metadata into context
+ * - tileCache: Checks cache and stores response
  */
-pamphlet.get('/:id/tile/:hash', requireToken, async (c) => {
+pamphlet.get('/:id/tile/:hash', requireToken, loadMetadata, tileCache, async (c) => {
   const pamphletId = c.req.param('id');
   const hash = c.req.param('hash');
 
@@ -68,43 +58,20 @@ pamphlet.get('/:id/tile/:hash', requireToken, async (c) => {
   }
 
   try {
-    // Get metadata from R2 to retrieve version number
-    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
-    if (!metadata) {
-      return c.json({ error: 'Pamphlet not found' }, 404);
-    }
-
-    // Generate cache key with version
-    const cacheKey = getTileCacheKey(pamphletId, hash, metadata.version);
-
-    // Check Cache API
-    const cachedResponse = await getTileFromCache(cacheKey);
-    if (cachedResponse) {
-      console.log(`Cache HIT: ${cacheKey}`);
-      return cachedResponse;
-    }
-
-    console.log(`Cache MISS: ${cacheKey}`);
-
     // Get tile from R2
     const tileObject = await r2Service.getTile(c.env, pamphletId, hash);
     if (!tileObject) {
       return c.json({ error: 'Tile not found' }, 404);
     }
 
-    // Create response with cache headers
-    const response = new Response(tileObject.body, {
+    // Return response with cache headers
+    return new Response(tileObject.body, {
       status: 200,
       headers: {
         'Content-Type': 'image/webp',
         ...getTileCacheHeaders(),
       },
     });
-
-    // Put into Cache API (non-blocking)
-    c.executionCtx.waitUntil(putTileIntoCache(cacheKey, response.clone()));
-
-    return response;
   } catch (error) {
     console.error('Error fetching tile:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -115,8 +82,12 @@ pamphlet.get('/:id/tile/:hash', requireToken, async (c) => {
  * POST /:id/invalidate
  * Invalidate pamphlet cache by updating version in R2
  * Requires token authentication
+ *
+ * Middleware stack:
+ * - requireToken: Validates authentication token
+ * - loadMetadata: Loads pamphlet metadata into context
  */
-pamphlet.post('/:id/invalidate', requireToken, async (c) => {
+pamphlet.post('/:id/invalidate', requireToken, loadMetadata, async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -124,8 +95,9 @@ pamphlet.post('/:id/invalidate', requireToken, async (c) => {
   }
 
   try {
-    // Get metadata from R2
-    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
+    // Get metadata from context (loaded by loadMetadata middleware)
+    const metadata = c.get('metadata');
+
     if (!metadata) {
       return c.json({ error: 'Pamphlet not found' }, 404);
     }
@@ -154,8 +126,11 @@ pamphlet.post('/:id/invalidate', requireToken, async (c) => {
  * Generate signed token for pamphlet access
  * This endpoint should be protected by additional authentication in production
  * (e.g., API key, admin auth)
+ *
+ * Middleware stack:
+ * - loadMetadata: Loads pamphlet metadata into context (validates pamphlet exists)
  */
-pamphlet.post('/:id/generate-token', async (c) => {
+pamphlet.post('/:id/generate-token', loadMetadata, async (c) => {
   const pamphletId = c.req.param('id');
 
   if (!pamphletId) {
@@ -174,13 +149,7 @@ pamphlet.post('/:id/generate-token', async (c) => {
   }
 
   try {
-    // Verify pamphlet exists
-    const metadata = await r2Service.getMetadata(c.env, pamphletId) as Metadata | null;
-    if (!metadata) {
-      return c.json({ error: 'Pamphlet not found' }, 404);
-    }
-
-    // Generate token
+    // Generate token (pamphlet existence already verified by loadMetadata middleware)
     const token = await generateToken(c.env, pamphletId, expiresIn);
 
     return c.json({

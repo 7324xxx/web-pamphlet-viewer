@@ -36,6 +36,15 @@ export interface Env {
  * These can be set and accessed within request handlers
  */
 export type Variables = {
-  // Add any context variables here as needed
-  // Example: userId: string;
+  // Pamphlet metadata (set by loadMetadata middleware)
+  metadata?: {
+    version: number;
+    tile_size: number;
+    pages: Array<{
+      page: number;
+      width: number;
+      height: number;
+      tiles: Array<{ x: number; y: number; hash: string }>;
+    }>;
+  };
 };
