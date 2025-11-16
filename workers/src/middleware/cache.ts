@@ -3,18 +3,16 @@
  * Handles Cache API integration for tile and metadata responses
  */
 
-import { Context } from 'hono';
+import { createMiddleware } from 'hono/factory';
 import type { Env, Variables } from '../types/bindings';
 import {
   getTileCacheKey,
   getTileFromCache,
   putTileIntoCache,
-  getTileCacheHeaders,
   getMetadataCacheKey,
   getMetadataFromCache,
   putMetadataIntoCache,
   deleteMetadataFromCache,
-  getMetadataCacheHeaders,
 } from '../services/cache';
 
 /**
@@ -36,39 +34,38 @@ import {
  * );
  * ```
  */
-export async function metadataCache(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
-  next: Function
-) {
-  const pamphletId = c.req.param('id');
+export const metadataCache = createMiddleware<{ Bindings: Env; Variables: Variables }>(
+  async (c, next) => {
+    const pamphletId = c.req.param('id');
 
-  if (!pamphletId) {
+    if (!pamphletId) {
+      await next();
+      return;
+    }
+
+    // Generate cache key
+    const cacheKey = getMetadataCacheKey(pamphletId);
+
+    // Check Cache API
+    const cachedResponse = await getMetadataFromCache(cacheKey);
+    if (cachedResponse) {
+      console.log(`Metadata cache HIT: ${cacheKey}`);
+      return cachedResponse;
+    }
+
+    console.log(`Metadata cache MISS: ${cacheKey}`);
+
+    // Execute handler to get response (loadMetadata + handler)
     await next();
-    return;
+
+    // After handler execution, cache the response if it's successful
+    const response = c.res;
+    if (response && response.status === 200) {
+      // Store in cache asynchronously (non-blocking)
+      c.executionCtx.waitUntil(putMetadataIntoCache(cacheKey, response.clone()));
+    }
   }
-
-  // Generate cache key
-  const cacheKey = getMetadataCacheKey(pamphletId);
-
-  // Check Cache API
-  const cachedResponse = await getMetadataFromCache(cacheKey);
-  if (cachedResponse) {
-    console.log(`Metadata cache HIT: ${cacheKey}`);
-    return cachedResponse;
-  }
-
-  console.log(`Metadata cache MISS: ${cacheKey}`);
-
-  // Execute handler to get response (loadMetadata + handler)
-  await next();
-
-  // After handler execution, cache the response if it's successful
-  const response = c.res;
-  if (response && response.status === 200) {
-    // Store in cache asynchronously (non-blocking)
-    c.executionCtx.waitUntil(putMetadataIntoCache(cacheKey, response.clone()));
-  }
-}
+);
 
 /**
  * Tile cache middleware
@@ -94,42 +91,41 @@ export async function metadataCache(
  * );
  * ```
  */
-export async function tileCache(
-  c: Context<{ Bindings: Env; Variables: Variables }>,
-  next: Function
-) {
-  const pamphletId = c.req.param('id');
-  const hash = c.req.param('hash');
-  const metadata = c.get('metadata');
+export const tileCache = createMiddleware<{ Bindings: Env; Variables: Variables }>(
+  async (c, next) => {
+    const pamphletId = c.req.param('id');
+    const hash = c.req.param('hash');
+    const metadata = c.get('metadata');
 
-  if (!pamphletId || !hash || !metadata) {
-    // Skip cache if required data is missing
+    if (!pamphletId || !hash || !metadata) {
+      // Skip cache if required data is missing
+      await next();
+      return;
+    }
+
+    // Generate cache key with version
+    const cacheKey = getTileCacheKey(pamphletId, hash, metadata.version);
+
+    // Check Cache API
+    const cachedResponse = await getTileFromCache(cacheKey);
+    if (cachedResponse) {
+      console.log(`Cache HIT: ${cacheKey}`);
+      return cachedResponse;
+    }
+
+    console.log(`Cache MISS: ${cacheKey}`);
+
+    // Execute handler to get response
     await next();
-    return;
+
+    // After handler execution, cache the response if it's successful
+    const response = c.res;
+    if (response && response.status === 200) {
+      // Store in cache asynchronously (non-blocking)
+      c.executionCtx.waitUntil(putTileIntoCache(cacheKey, response.clone()));
+    }
   }
-
-  // Generate cache key with version
-  const cacheKey = getTileCacheKey(pamphletId, hash, metadata.version);
-
-  // Check Cache API
-  const cachedResponse = await getTileFromCache(cacheKey);
-  if (cachedResponse) {
-    console.log(`Cache HIT: ${cacheKey}`);
-    return cachedResponse;
-  }
-
-  console.log(`Cache MISS: ${cacheKey}`);
-
-  // Execute handler to get response
-  await next();
-
-  // After handler execution, cache the response if it's successful
-  const response = c.res;
-  if (response && response.status === 200) {
-    // Store in cache asynchronously (non-blocking)
-    c.executionCtx.waitUntil(putTileIntoCache(cacheKey, response.clone()));
-  }
-}
+);
 
 /**
  * Clear metadata cache
