@@ -2,9 +2,6 @@ import { hc } from 'hono/client';
 import type { AppType } from '../../index';
 import type { ProcessedPage, Metadata } from '../types';
 
-// Create Hono RPC client
-const client = hc<AppType>('/');
-
 export async function uploadTiles(
   pages: ProcessedPage[],
   pamphletId: string,
@@ -40,14 +37,25 @@ export async function uploadTiles(
   for (const page of pages) {
     for (const tile of page.tiles) {
       if (!addedHashes.has(tile.hash)) {
-        tiles[`tile-${tile.hash}`] = new Blob([tile.data], { type: 'image/webp' });
+        tiles[`tile-${tile.hash}`] = new Blob([tile.data as Uint8Array<ArrayBuffer>], { type: 'image/webp' });
         addedHashes.add(tile.hash);
       }
     }
   }
 
   // アップロード (Hono RPC client with type-safe form data)
-  const res = await client.admin.upload.$post({
+  // Note: hc<AppType>('/') returns a complex union type that TypeScript
+  // cannot always infer correctly. We use type assertion here as the
+  // actual runtime behavior is correct.
+  const res = await (hc<AppType>('/') as {
+    admin: {
+      upload: {
+        $post: (args: {
+          form: Record<string, string | Blob>;
+        }) => Promise<Response>;
+      };
+    };
+  }).admin.upload.$post({
     form: {
       id: pamphletId,
       metadata: JSON.stringify(metadata),
@@ -60,7 +68,7 @@ export async function uploadTiles(
     throw new Error(`Upload failed: ${res.status} ${errorText}`);
   }
 
-  const result = await res.json();
+  const result = (await res.json()) as { id: string; version: number };
   onProgress(100);
 
   return result;

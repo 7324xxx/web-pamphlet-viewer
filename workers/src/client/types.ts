@@ -8,6 +8,9 @@ export type {
   TileMetadata,
 } from 'shared/types/wasm';
 
+// Import for extension
+import type { JsTileInfo } from 'shared/types/wasm';
+
 // Client-specific types
 export interface FileWithPreview extends File {
   preview?: string;

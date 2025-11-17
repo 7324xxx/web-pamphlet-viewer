@@ -15,7 +15,7 @@ admin.get('/', (c) => {
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>パンフレットアップローダー</title>
-        <Link src="/src/style.css" />
+        <Link href="/src/style.css" />
         <Script type="module" src="/src/client/index.tsx" />
         <ViteClient />
       </head>
