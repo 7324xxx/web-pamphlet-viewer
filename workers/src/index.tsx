@@ -37,16 +37,17 @@ app.get('/', (c) => {
 });
 
 // Mount routers
-app.route('/pamphlet', pamphlet);
-app.route('/admin', admin);
+const routes = app
+  .route('/pamphlet', pamphlet)
+  .route('/admin', admin);
 
 // 404 handler
-app.notFound((c) => {
+routes.notFound((c) => {
   return c.json({ error: 'Not found' }, 404);
 });
 
 // Error handler
-app.onError((err, c) => {
+routes.onError((err, c) => {
   console.error('Unhandled error:', err);
   return c.json(
     {
@@ -58,7 +59,7 @@ app.onError((err, c) => {
 });
 
 // Export the app
-export default app;
+export default routes;
 
 // Export type for RPC client
-export type AppType = typeof app;
+export type AppType = typeof routes;

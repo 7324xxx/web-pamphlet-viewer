@@ -1,8 +1,10 @@
 import { hc } from 'hono/client';
-import type { AppType } from '../../index';
+import type upload from '../../routes/upload';
 import { uploadResponseSchema } from '../../routes/upload';
 import type { ProcessedPage, Metadata } from '../types';
 import type { z } from 'zod';
+
+type UploadType = typeof upload;
 
 export async function uploadTiles(
   pages: ProcessedPage[],
@@ -51,32 +53,8 @@ export async function uploadTiles(
   }
 
   // アップロード (Hono RPC client with FormData)
-  // Note: TypeScript cannot infer the type of hc<AppType>() due to complex route types from app.route()
-  // Runtime type safety is ensured by zod schema validation below
-  const client = hc<AppType>('/');
-
-  // Type-safe accessor with runtime validation
-  function isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null;
-  }
-
-  function getEndpoint(obj: unknown, path: string[]): unknown {
-    let current = obj;
-    for (const key of path) {
-      if (!isRecord(current) || !(key in current)) {
-        throw new Error(`Invalid client structure: missing ${path.join('.')}`);
-      }
-      current = current[key];
-    }
-    return current;
-  }
-
-  const $post = getEndpoint(client, ['admin', 'upload', '$post']);
-  if (typeof $post !== 'function') {
-    throw new Error('Invalid client structure: $post is not a function');
-  }
-
-  const res = await $post({
+  const client = hc<UploadType>('/admin/upload');
+  const res = await client.index.$post({
     form: formData,
   });
 

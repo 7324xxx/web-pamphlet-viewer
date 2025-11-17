@@ -4,13 +4,10 @@
  */
 
 import { Hono, Context } from 'hono';
-import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata, PageInfo, UploadResponse } from 'shared/types/wasm';
 import * as r2Service from '../services/r2';
-
-const upload = new Hono<{ Bindings: Env; Variables: Variables }>();
 
 /**
  * Upload Request Body (JSON format)
@@ -20,20 +17,6 @@ interface UploadRequestBody {
   tile_size: number;
   pages: PageInfo[];
 }
-
-/**
- * Validation schema for multipart form upload
- */
-const uploadFormSchema = z.object({
-  id: z.string().min(1),
-  metadata: z.string().transform((str) => {
-    try {
-      return JSON.parse(str);
-    } catch {
-      throw new Error('Invalid metadata JSON');
-    }
-  }),
-});
 
 /**
  * Response schema for upload
@@ -48,9 +31,8 @@ export const uploadResponseSchema = z.object({
  * POST /
  * Handle upload request (JSON or multipart)
  */
-upload.post(
+const upload = new Hono<{ Bindings: Env; Variables: Variables }>().post(
   '/',
-  zValidator('form', uploadFormSchema),
   async (c) => {
   try {
     const contentType = c.req.header('Content-Type') || '';
