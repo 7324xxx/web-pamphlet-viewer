@@ -43,7 +43,8 @@
 		/* Path mapping for shared module */
 		"baseUrl": ".",
 		"paths": {
-			"shared/*": ["../shared/src/*"]
+			"shared/*": ["../shared/src/*"],
+			"/wasm/*": ["./public/wasm/*"]
 		}
 	},
 	"exclude": ["test"],
