@@ -12,11 +12,7 @@ import { createCacheMiddleware } from '../middleware/cache';
 
 const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>();
 
-// Create cache middleware instances with inline headers
-const metadataCache = createCacheMiddleware(() => ({
-  'Cache-Control': 'private, max-age=60',
-}));
-
+// Create cache middleware for tiles
 const tileCache = createCacheMiddleware(() => ({
   'Cache-Control': 'public, max-age=86400, s-maxage=2592000',
   'CDN-Cache-Control': 'max-age=2592000',
@@ -28,14 +24,13 @@ const tileCache = createCacheMiddleware(() => ({
  * Public access - no authentication required
  *
  * Middleware stack:
- * - metadataCache: Checks cache and stores response using c.req.url as key
- * - loadMetadata: Loads pamphlet metadata from R2 (only on cache miss)
+ * - loadMetadata: Loads metadata from cache or R2, handles caching
  */
-pamphlet.get('/:id/metadata', metadataCache, loadMetadata, async (c) => {
+pamphlet.get('/:id/metadata', loadMetadata, async (c) => {
   // Get metadata from context (loaded by loadMetadata middleware)
   const metadata = c.get('metadata');
 
-  // Return metadata (cache headers added automatically by cache middleware)
+  // Return metadata (cache headers added by loadMetadata middleware)
   return c.json(metadata);
 });
 
