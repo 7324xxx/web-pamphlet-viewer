@@ -32,21 +32,6 @@ export async function uploadTiles(
 
   onProgress(0);
 
-  // FormDataを構築
-  const formData = new FormData();
-
-  // タイルを追加（ハッシュベース、重複排除）
-  const addedHashes = new Set<string>();
-  for (const page of pages) {
-    for (const tile of page.tiles) {
-      if (!addedHashes.has(tile.hash)) {
-        const blob = new Blob([tile.data], { type: 'image/webp' });
-        formData.append(`tile-${tile.hash}`, blob, `${tile.hash}.webp`);
-        addedHashes.add(tile.hash);
-      }
-    }
-  }
-
   // メタデータを構築
   const metadata: UploadMetadata = {
     version: Date.now().toString(),
@@ -63,12 +48,26 @@ export async function uploadTiles(
     })),
   };
 
-  formData.append('metadata', JSON.stringify(metadata));
-  formData.append('id', pamphletId);
+  // タイルを追加（ハッシュベース、重複排除）
+  const tiles: Record<string, Blob> = {};
+  const addedHashes = new Set<string>();
 
-  // アップロード (Hono RPC client)
+  for (const page of pages) {
+    for (const tile of page.tiles) {
+      if (!addedHashes.has(tile.hash)) {
+        tiles[`tile-${tile.hash}`] = new Blob([tile.data], { type: 'image/webp' });
+        addedHashes.add(tile.hash);
+      }
+    }
+  }
+
+  // アップロード (Hono RPC client with type-safe form data)
   const res = await client.admin.upload.$post({
-    form: formData as any,
+    form: {
+      id: pamphletId,
+      metadata: JSON.stringify(metadata),
+      ...tiles,
+    },
   });
 
   if (!res.ok) {
