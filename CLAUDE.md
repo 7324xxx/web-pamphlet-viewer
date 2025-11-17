@@ -172,7 +172,7 @@ web-pamphlet-viewer/
 │       │                      # - deleteFromCache(url)
 │       └── types/
 │           └── bindings.ts    # Workers bindings型定義
-│                              # - Env型（R2_BUCKET, META_KV等）
+│                              # - Env型（R2_BUCKET等）
 │                              # - Variables型
 │
 ├── wasm/                      # Rust/WASM タイル化エンジン
@@ -443,7 +443,7 @@ frontend → wasm/pkg (import)
 
 **wrangler.toml 設定**
 - R2バケット: `pamphlet-storage` をバインディング `R2_BUCKET` として設定
-- KV namespace: 将来的な用途のため予約（現在は未使用）
+- メタデータとタイル画像の両方をR2に保存（KV不使用）
 
 **主要エンドポイント**
 
@@ -864,8 +864,7 @@ frontend → wasm/pkg (import)
    # R2バケット作成
    wrangler r2 bucket create pamphlet-storage
 
-   # wrangler.toml のコメントを外して設定
-   # KV namespaceは現在未使用（将来的な拡張のため予約）
+   # wrangler.toml でR2バインディングを設定
    ```
 
 ---
