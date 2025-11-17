@@ -1,6 +1,5 @@
-/** @jsxImportSource preact */
-import { render } from 'preact';
-import { useState, useCallback } from 'preact/hooks';
+import { render } from 'hono/jsx/dom';
+import { useState, useCallback } from 'hono/jsx';
 
 // WASM関連の型定義
 interface TileResult {
