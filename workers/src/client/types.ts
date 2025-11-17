@@ -1,31 +1,26 @@
-// WASM関連の型定義
-export interface TileResult {
-  x: number;
-  y: number;
-  hash: string;
-  data: Uint8Array;
-}
+// Re-export shared types
+export type {
+  WasmModule,
+  JsTileResult,
+  JsTileInfo,
+  PageInfo,
+  Metadata,
+  TileMetadata,
+} from 'shared/types/wasm';
 
-export interface TileImageResult {
-  tiles: TileResult[];
-  width: number;
-  height: number;
-  tile_size: number;
-}
-
-export interface WasmModule {
-  tile_image: (imageData: Uint8Array, tileSize: number) => TileImageResult;
-  generate_metadata: (pages: any[]) => string;
-}
-
+// Client-specific types
 export interface FileWithPreview extends File {
   preview?: string;
+}
+
+export interface TileWithData extends JsTileInfo {
+  data: Uint8Array;
 }
 
 export interface ProcessedPage {
   file: File;
   pageNumber: number;
-  tiles: TileResult[];
+  tiles: TileWithData[];
   width: number;
   height: number;
   tileSize: number;

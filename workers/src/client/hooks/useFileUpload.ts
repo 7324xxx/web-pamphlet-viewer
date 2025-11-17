@@ -1,21 +1,6 @@
 import { hc } from 'hono/client';
 import type { AppType } from '../../index';
-import type { ProcessedPage } from '../types';
-
-interface UploadMetadata {
-  version: string;
-  tile_size: number;
-  pages: Array<{
-    page: number;
-    width: number;
-    height: number;
-    tiles: Array<{
-      x: number;
-      y: number;
-      hash: string;
-    }>;
-  }>;
-}
+import type { ProcessedPage, Metadata } from '../types';
 
 // Create Hono RPC client
 const client = hc<AppType>('/');
@@ -33,8 +18,8 @@ export async function uploadTiles(
   onProgress(0);
 
   // メタデータを構築
-  const metadata: UploadMetadata = {
-    version: Date.now().toString(),
+  const metadata: Metadata = {
+    version: Date.now(),
     tile_size: tileSize,
     pages: pages.map((page) => ({
       page: page.pageNumber,

@@ -1,5 +1,5 @@
 import { initWasm } from './useWasm';
-import type { ProcessedPage, FileWithPreview } from '../types';
+import type { ProcessedPage, FileWithPreview, TileWithData } from '../types';
 
 export async function processImages(
   files: FileWithPreview[],
@@ -39,12 +39,25 @@ export async function processImages(
 
       const result = wasm.tile_image(uint8Array, tileSize);
 
+      // タイル情報とデータを結合
+      const tileCount = result.tile_count();
+      const tilesWithData: TileWithData[] = [];
+
+      for (let j = 0; j < tileCount; j++) {
+        const tileInfo = result.tiles[j];
+        const tileData = result.get_tile_data(j);
+        tilesWithData.push({
+          ...tileInfo,
+          data: tileData,
+        });
+      }
+
       onPageUpdate((prev) =>
         prev.map((p, idx) =>
           idx === i
             ? {
                 ...p,
-                tiles: result.tiles,
+                tiles: tilesWithData,
                 width: result.width,
                 height: result.height,
                 status: 'completed' as const,
