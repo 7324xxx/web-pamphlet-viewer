@@ -32,34 +32,52 @@ export async function uploadTiles(
     })),
   };
 
-  // タイルを追加（ハッシュベース、重複排除）
-  const tiles: Record<string, Blob> = {};
-  const addedHashes = new Set<string>();
+  // FormDataを構築（ハッシュベース、重複排除）
+  const formData = new FormData();
+  formData.append('id', pamphletId);
+  formData.append('metadata', JSON.stringify(metadata));
 
+  const addedHashes = new Set<string>();
   for (const page of pages) {
     for (const tile of page.tiles) {
       if (!addedHashes.has(tile.hash)) {
-        tiles[`tile-${tile.hash}`] = new Blob([tile.data as Uint8Array<ArrayBuffer>], { type: 'image/webp' });
+        // Create new Uint8Array from the data to ensure ArrayBuffer type
+        const dataArray = new Uint8Array(tile.data);
+        const blob = new Blob([dataArray], { type: 'image/webp' });
+        formData.append(`tile-${tile.hash}`, blob);
         addedHashes.add(tile.hash);
       }
     }
   }
 
-  // アップロード (Hono RPC client with type-safe form data)
-  // Note: hc<AppType>() returns unknown due to complex route types from app.route()
-  // We use type assertion here, but ensure type safety through zod schema validation
-  type PostFn = (args: {
-    form: Record<string, string | Blob>;
-  }) => Promise<Response>;
+  // アップロード (Hono RPC client with FormData)
+  // Note: TypeScript cannot infer the type of hc<AppType>() due to complex route types from app.route()
+  // Runtime type safety is ensured by zod schema validation below
+  const client = hc<AppType>('/');
 
-  const client = hc<AppType>('/') as { admin: { upload: { $post: PostFn } } };
+  // Type-safe accessor with runtime validation
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
 
-  const res = await client.admin.upload.$post({
-    form: {
-      id: pamphletId,
-      metadata: JSON.stringify(metadata),
-      ...tiles,
-    },
+  function getEndpoint(obj: unknown, path: string[]): unknown {
+    let current = obj;
+    for (const key of path) {
+      if (!isRecord(current) || !(key in current)) {
+        throw new Error(`Invalid client structure: missing ${path.join('.')}`);
+      }
+      current = current[key];
+    }
+    return current;
+  }
+
+  const $post = getEndpoint(client, ['admin', 'upload', '$post']);
+  if (typeof $post !== 'function') {
+    throw new Error('Invalid client structure: $post is not a function');
+  }
+
+  const res = await $post({
+    form: formData,
   });
 
   if (!res.ok) {

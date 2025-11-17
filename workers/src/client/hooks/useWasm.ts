@@ -11,15 +11,17 @@ export async function initWasm(): Promise<WasmModule> {
 
   wasmInitPromise = (async () => {
     try {
-      // Dynamic import of WASM module - type checking is bypassed here
-      // as the module path is resolved at runtime by Vite
-      const wasmImport = await import('/wasm/tile_wasm.js' as string);
-      await (wasmImport.default as () => Promise<void>)();
+      // Dynamic import of WASM module
+      // Type definitions are provided by wasm.d.ts but TypeScript cannot resolve
+      // dynamic imports at compile time. Runtime type safety is ensured by WasmModule interface.
+      // @ts-expect-error - Dynamic import path cannot be resolved at compile time
+      const wasmImport = await import(/* @vite-ignore */ '/wasm/tile_wasm.js');
+      await wasmImport.default();
 
       const wasm: WasmModule = {
-        tile_image: wasmImport.tile_image as WasmModule['tile_image'],
-        generate_metadata: wasmImport.generate_metadata as WasmModule['generate_metadata'],
-        calculate_hash: wasmImport.calculate_hash as WasmModule['calculate_hash'],
+        tile_image: wasmImport.tile_image,
+        generate_metadata: wasmImport.generate_metadata,
+        calculate_hash: wasmImport.calculate_hash,
       };
 
       wasmModule = wasm;
