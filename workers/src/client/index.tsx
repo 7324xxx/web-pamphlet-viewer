@@ -1,3 +1,4 @@
+import '../style.css';
 import { render } from 'hono/jsx/dom';
 import { useState, useCallback } from 'hono/jsx';
 import { FileDropZone } from './components/FileDropZone';

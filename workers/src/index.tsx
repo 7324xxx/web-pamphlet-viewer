@@ -27,13 +27,9 @@ app.use(
   })
 );
 
-// Health check endpoint
+// Redirect root to admin page
 app.get('/', (c) => {
-  return c.json({
-    service: 'Pamphlet Viewer API',
-    status: 'ok',
-    version: '1.0.0',
-  });
+  return c.redirect('/admin', 302);
 });
 
 // Mount routers and configure handlers
