@@ -4,6 +4,7 @@
  */
 
 import { Hono, Context } from 'hono';
+import { zValidator } from '@hono/zod-validator';
 import type { Env, Variables } from '../types/bindings';
 import type { Metadata, UploadResponse } from 'shared/types/wasm';
 import {
@@ -15,65 +16,102 @@ import {
 import * as r2Service from '../services/r2';
 
 /**
- * POST /
- * Handle upload request (JSON or multipart)
+ * POST /json
+ * Handle JSON upload (metadata only, tiles already uploaded)
  */
-const upload = new Hono<{ Bindings: Env; Variables: Variables }>().post(
+const jsonUploadRoute = new Hono<{ Bindings: Env; Variables: Variables }>().post(
   '/',
+  zValidator('json', uploadRequestSchema),
   async (c) => {
-  try {
-    const contentType = c.req.header('Content-Type') || '';
+    try {
+      const validatedData = c.req.valid('json');
 
-    // Check if this is a JSON request (metadata only, tiles already uploaded)
-    if (contentType.includes('application/json')) {
-      return await handleJsonUpload(c);
+      // Create metadata with current timestamp as version
+      const metadata: Metadata = {
+        version: Date.now(),
+        tile_size: validatedData.tile_size,
+        pages: validatedData.pages,
+      };
+
+      // Save metadata to R2
+      await r2Service.putMetadata(c.env, validatedData.id, metadata);
+
+      return c.json<UploadResponse>({
+        id: validatedData.id,
+        version: metadata.version,
+        status: 'ok' as const,
+      });
+    } catch (error) {
+      console.error('Error handling JSON upload:', error);
+      return c.json({ error: 'Internal server error', message: String(error) }, 500);
     }
-
-    // Check if this is a multipart request (with tile files)
-    if (contentType.includes('multipart/form-data')) {
-      return await handleMultipartUpload(c);
-    }
-
-    return c.json({ error: 'Unsupported content type' }, 400);
-  } catch (error) {
-    console.error('Error handling upload:', error);
-    return c.json({ error: 'Internal server error', message: String(error) }, 500);
   }
-});
+);
 
 /**
- * Handle JSON upload (metadata only)
+ * POST /multipart
+ * Handle multipart upload (with tile files)
  */
-async function handleJsonUpload(c: Context<{ Bindings: Env; Variables: Variables }>) {
-  const body = await c.req.json();
-
-  // Validate request body with zod
-  const validationResult = uploadRequestSchema.safeParse(body);
-  if (!validationResult.success) {
-    return c.json(
-      { error: 'Invalid request body', details: validationResult.error.issues },
-      400
-    );
+const multipartUploadRoute = new Hono<{ Bindings: Env; Variables: Variables }>().post(
+  '/',
+  async (c) => {
+    try {
+      return await handleMultipartUpload(c);
+    } catch (error) {
+      console.error('Error handling multipart upload:', error);
+      return c.json({ error: 'Internal server error', message: String(error) }, 500);
+    }
   }
+);
 
-  const validatedData = validationResult.data;
+/**
+ * Main upload router - routes to appropriate handler based on path
+ */
+const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
+  .route('/json', jsonUploadRoute)
+  .route('/multipart', multipartUploadRoute)
+  .post('/', async (c) => {
+    // Legacy endpoint - auto-detect content type
+    try {
+      const contentType = c.req.header('Content-Type') || '';
 
-  // Create metadata with current timestamp as version
-  const metadata: Metadata = {
-    version: Date.now(),
-    tile_size: validatedData.tile_size,
-    pages: validatedData.pages,
-  };
+      if (contentType.includes('application/json')) {
+        // Forward to JSON route
+        const body = await c.req.json();
+        const validationResult = uploadRequestSchema.safeParse(body);
+        if (!validationResult.success) {
+          return c.json(
+            { error: 'Invalid request body', details: validationResult.error.issues },
+            400
+          );
+        }
 
-  // Save metadata to R2
-  await r2Service.putMetadata(c.env, validatedData.id, metadata);
+        const validatedData = validationResult.data;
+        const metadata: Metadata = {
+          version: Date.now(),
+          tile_size: validatedData.tile_size,
+          pages: validatedData.pages,
+        };
 
-  return c.json<UploadResponse>({
-    id: validatedData.id,
-    version: metadata.version,
-    status: 'ok' as const,
+        await r2Service.putMetadata(c.env, validatedData.id, metadata);
+
+        return c.json<UploadResponse>({
+          id: validatedData.id,
+          version: metadata.version,
+          status: 'ok' as const,
+        });
+      }
+
+      if (contentType.includes('multipart/form-data')) {
+        return await handleMultipartUpload(c);
+      }
+
+      return c.json({ error: 'Unsupported content type' }, 400);
+    } catch (error) {
+      console.error('Error handling upload:', error);
+      return c.json({ error: 'Internal server error', message: String(error) }, 500);
+    }
   });
-}
 
 /**
  * Handle multipart upload (with tile files)
