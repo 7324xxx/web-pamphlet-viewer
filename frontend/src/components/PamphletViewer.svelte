@@ -6,6 +6,7 @@
   import { TileLoader } from '../lib/tile-loader';
   import { CanvasRenderer } from '../lib/canvas-renderer';
   import { calculateViewportBounds, getVisibleTiles } from '../lib/viewport';
+  import { TouchHandler } from '../lib/touch-handler';
 
   // Props (attributes)
   let {
@@ -22,8 +23,10 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let canvasElement = $state<HTMLCanvasElement | null>(null);
+  let canvasContainer = $state<HTMLDivElement | null>(null);
   let renderer = $state<CanvasRenderer | null>(null);
   let tileLoader = $state<TileLoader | null>(null);
+  let touchHandler = $state<TouchHandler | null>(null);
   let loadingTiles = $state(0);
   let totalTiles = $state(0);
 
@@ -181,6 +184,63 @@
   }
 
   /**
+   * ズーム処理
+   */
+  async function handleZoom(scale: number): Promise<void> {
+    if (!renderer || !currentPageData) return;
+
+    renderer.setScale(scale);
+    touchHandler?.setScale(scale);
+
+    // 再描画
+    await redrawCurrentPage();
+  }
+
+  /**
+   * パン処理
+   */
+  async function handlePan(deltaX: number, deltaY: number): Promise<void> {
+    if (!renderer || !currentPageData) return;
+
+    renderer.pan(deltaX, deltaY);
+
+    // 再描画
+    await redrawCurrentPage();
+  }
+
+  /**
+   * ダブルタップ処理（ズームリセット）
+   */
+  async function handleDoubleTap(): Promise<void> {
+    if (!renderer || !currentPageData) return;
+
+    renderer.resetTransform();
+    touchHandler?.setScale(1);
+
+    // 再描画
+    await redrawCurrentPage();
+  }
+
+  /**
+   * 現在のページを再描画
+   */
+  async function redrawCurrentPage(): Promise<void> {
+    if (!renderer || !currentPageData || !tileLoader) return;
+
+    renderer.clear();
+
+    // すべてのタイルを再描画
+    for (const tile of currentPageData.tiles) {
+      try {
+        const img = await tileLoader.loadTile(tile, apiBase, pamphletId, 5);
+        renderer.drawTile(tile, img);
+      } catch (err) {
+        console.error(`Failed to redraw tile ${tile.x},${tile.y}:`, err);
+      }
+    }
+  }
+
+  /**
    * キーボードイベント
    */
   function handleKeydown(e: KeyboardEvent): void {
@@ -196,6 +256,17 @@
     // TileLoaderを初期化
     tileLoader = new TileLoader(6);
 
+    // TouchHandlerを初期化
+    if (canvasContainer) {
+      touchHandler = new TouchHandler(canvasContainer, {
+        onZoom: handleZoom,
+        onPan: handlePan,
+        onSwipeLeft: nextPage,
+        onSwipeRight: prevPage,
+        onDoubleTap: handleDoubleTap
+      });
+    }
+
     // メタデータ取得
     await fetchMetadata();
 
@@ -210,6 +281,7 @@
 
     return () => {
       window.removeEventListener('keydown', handleKeydown);
+      touchHandler?.destroy();
     };
   });
 
@@ -238,7 +310,7 @@
     </div>
   {:else if metadata && currentPageData}
     <!-- Canvas container -->
-    <div class="flex-1 relative overflow-hidden">
+    <div class="flex-1 relative overflow-hidden" bind:this={canvasContainer} style="touch-action: none; -webkit-user-select: none; user-select: none;">
       <div class="absolute inset-0 flex items-center justify-center">
         <canvas
           bind:this={canvasElement}
@@ -260,19 +332,19 @@
       <button
         onclick={prevPage}
         disabled={!canGoPrev}
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+        class="px-6 py-3 min-w-[100px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       >
         Previous
       </button>
 
-      <span class="text-sm text-gray-600">
+      <span class="text-sm md:text-base text-gray-600 whitespace-nowrap">
         Page {currentPage + 1} / {totalPages}
       </span>
 
       <button
         onclick={nextPage}
         disabled={!canGoNext}
-        class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+        class="px-6 py-3 min-w-[100px] bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       >
         Next
       </button>

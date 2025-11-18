@@ -8,7 +8,11 @@ export class CanvasRenderer {
   private ctx: CanvasRenderingContext2D;
   private tileSize: number;
   private scale = 1;
+  private translateX = 0;
+  private translateY = 0;
   private dpr: number;
+  private pageWidth = 0;
+  private pageHeight = 0;
 
   constructor(canvas: HTMLCanvasElement, tileSize: number) {
     this.canvas = canvas;
@@ -26,14 +30,19 @@ export class CanvasRenderer {
    * Canvasを初期化（ページサイズに合わせる）
    */
   initCanvas(width: number, height: number): void {
+    this.pageWidth = width;
+    this.pageHeight = height;
+
     // 高DPI対応
     this.canvas.width = width * this.dpr;
     this.canvas.height = height * this.dpr;
     this.canvas.style.width = `${width}px`;
     this.canvas.style.height = `${height}px`;
 
-    // スケール調整
-    this.ctx.scale(this.dpr, this.dpr);
+    // transformをリセット
+    this.scale = 1;
+    this.translateX = 0;
+    this.translateY = 0;
 
     // 背景をクリア
     this.clear();
@@ -43,8 +52,22 @@ export class CanvasRenderer {
    * Canvasをクリア
    */
   clear(): void {
+    // transformをリセットしてクリア
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.fillStyle = '#f9fafb';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.restore();
+  }
+
+  /**
+   * transformを適用
+   */
+  private applyTransform(): void {
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(this.dpr, this.dpr);
+    this.ctx.translate(this.translateX, this.translateY);
+    this.ctx.scale(this.scale, this.scale);
   }
 
   /**
@@ -55,13 +78,10 @@ export class CanvasRenderer {
     const y = tile.y * this.tileSize;
 
     try {
-      this.ctx.drawImage(
-        img,
-        x * this.scale,
-        y * this.scale,
-        this.tileSize * this.scale,
-        this.tileSize * this.scale
-      );
+      this.ctx.save();
+      this.applyTransform();
+      this.ctx.drawImage(img, x, y, this.tileSize, this.tileSize);
+      this.ctx.restore();
     } catch (err) {
       console.error(`Failed to draw tile at ${tile.x},${tile.y}:`, err);
     }
@@ -85,30 +105,67 @@ export class CanvasRenderer {
     const x = tile.x * this.tileSize;
     const y = tile.y * this.tileSize;
 
+    this.ctx.save();
+    this.applyTransform();
+
     this.ctx.fillStyle = '#e5e7eb';
-    this.ctx.fillRect(
-      x * this.scale,
-      y * this.scale,
-      this.tileSize * this.scale,
-      this.tileSize * this.scale
-    );
+    this.ctx.fillRect(x, y, this.tileSize, this.tileSize);
 
     // 枠線
     this.ctx.strokeStyle = '#d1d5db';
-    this.ctx.lineWidth = 1;
-    this.ctx.strokeRect(
-      x * this.scale,
-      y * this.scale,
-      this.tileSize * this.scale,
-      this.tileSize * this.scale
-    );
+    this.ctx.lineWidth = 1 / this.scale; // スケールに応じて線幅を調整
+    this.ctx.strokeRect(x, y, this.tileSize, this.tileSize);
+
+    this.ctx.restore();
   }
 
   /**
    * ズーム設定
    */
   setScale(scale: number): void {
-    this.scale = scale;
+    this.scale = Math.max(0.5, Math.min(5, scale));
+  }
+
+  /**
+   * パン設定
+   */
+  setPan(x: number, y: number): void {
+    // パン範囲を制限（画像が画面外に行きすぎないように）
+    const maxX = Math.max(0, (this.pageWidth * this.scale - this.pageWidth) / 2);
+    const maxY = Math.max(0, (this.pageHeight * this.scale - this.pageHeight) / 2);
+
+    this.translateX = Math.max(-maxX, Math.min(maxX, x));
+    this.translateY = Math.max(-maxY, Math.min(maxY, y));
+  }
+
+  /**
+   * パン移動（相対）
+   */
+  pan(deltaX: number, deltaY: number): void {
+    this.setPan(this.translateX + deltaX, this.translateY + deltaY);
+  }
+
+  /**
+   * transformをリセット
+   */
+  resetTransform(): void {
+    this.scale = 1;
+    this.translateX = 0;
+    this.translateY = 0;
+  }
+
+  /**
+   * 現在のスケールを取得
+   */
+  getScale(): number {
+    return this.scale;
+  }
+
+  /**
+   * 現在のパン位置を取得
+   */
+  getPan(): { x: number; y: number } {
+    return { x: this.translateX, y: this.translateY };
   }
 
   /**
