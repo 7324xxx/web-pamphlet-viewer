@@ -1,12 +1,13 @@
 import '../style.css';
 import { render } from 'hono/jsx/dom';
-import { useState, useCallback } from 'hono/jsx';
+import { useState, useCallback, useEffect } from 'hono/jsx';
 import { FileDropZone } from './components/FileDropZone';
 import { FileList } from './components/FileList';
 import { ProcessingStatus } from './components/ProcessingStatus';
 import { UploadProgress } from './components/UploadProgress';
 import { processImages } from './hooks/useImageProcessor';
 import { uploadTiles } from './hooks/useFileUpload';
+import { initWasm } from './hooks/useWasm';
 import type { FileWithPreview, ProcessedPage } from './types';
 
 function App() {
@@ -17,6 +18,23 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [pamphletId, setPamphletId] = useState('');
   const [tileSize, setTileSize] = useState(512);
+  const [wasmReady, setWasmReady] = useState(false);
+  const [wasmError, setWasmError] = useState<string | null>(null);
+
+  // WASM初期化
+  useEffect(() => {
+    initWasm()
+      .then(() => {
+        setWasmReady(true);
+        console.log('WASM initialized successfully');
+      })
+      .catch((error) => {
+        console.error('WASM initialization failed:', error);
+        setWasmError(
+          error instanceof Error ? error.message : 'WASM初期化に失敗しました'
+        );
+      });
+  }, []);
 
   const handleDragOver = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -128,6 +146,24 @@ function App() {
           <div class="px-6 py-8">
             <h1 class="text-3xl font-bold text-gray-900 mb-8">パンフレットアップローダー</h1>
 
+            {/* WASMエラー表示 */}
+            {wasmError && (
+              <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p class="text-sm text-red-800 font-medium">エラー</p>
+                <p class="text-sm text-red-600 mt-1">{wasmError}</p>
+                <p class="text-xs text-red-500 mt-2">
+                  お使いのブラウザがWebAssemblyに対応していない可能性があります。最新のブラウザをご利用ください。
+                </p>
+              </div>
+            )}
+
+            {/* WASM読み込み中 */}
+            {!wasmReady && !wasmError && (
+              <div class="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <p class="text-sm text-blue-800">初期化中...</p>
+              </div>
+            )}
+
             {/* パンフレットID入力 */}
             <div class="mb-6">
               <label class="block text-sm font-medium text-gray-700 mb-2" htmlFor="pamphlet-id">
@@ -140,7 +176,7 @@ function App() {
                 onInput={(e) => setPamphletId((e.target as HTMLInputElement).value)}
                 class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="例: pamphlet-2024-01"
-                disabled={isProcessing}
+                disabled={isProcessing || !wasmReady}
               />
             </div>
 
@@ -158,14 +194,14 @@ function App() {
                 min="128"
                 max="1024"
                 step="128"
-                disabled={isProcessing}
+                disabled={isProcessing || !wasmReady}
               />
             </div>
 
             {/* ドラッグ&ドロップエリア */}
             <FileDropZone
               isDragging={isDragging}
-              isProcessing={isProcessing}
+              isProcessing={isProcessing || !wasmReady}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
@@ -182,10 +218,10 @@ function App() {
             <div class="mt-6">
               <button
                 onClick={handleProcessAndUpload}
-                disabled={isProcessing || files.length === 0 || !pamphletId.trim()}
+                disabled={!wasmReady || isProcessing || files.length === 0 || !pamphletId.trim()}
                 class="w-full px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isProcessing ? '処理中...' : 'タイル化してアップロード'}
+                {!wasmReady && !wasmError ? '初期化中...' : isProcessing ? '処理中...' : 'タイル化してアップロード'}
               </button>
             </div>
 
