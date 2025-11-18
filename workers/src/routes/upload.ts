@@ -8,7 +8,7 @@ import type { Env, Variables } from '../types/bindings';
 import type { Metadata, UploadResponse } from 'shared/types/wasm';
 import {
   uploadFormDataSchema,
-  metadataSchema,
+  uploadMetadataSchema,
 } from 'shared/schemas/pamphlet';
 import * as r2Service from '../services/r2';
 
@@ -40,8 +40,8 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
         return c.json({ error: 'Invalid JSON in metadata field' }, 400);
       }
 
-      // Validate metadata with zod
-      const metadataValidation = metadataSchema.safeParse(parsedMetadata);
+      // Validate metadata with zod (without version - server sets it)
+      const metadataValidation = uploadMetadataSchema.safeParse(parsedMetadata);
       if (!metadataValidation.success) {
         return c.json(
           { error: 'Invalid metadata structure', details: metadataValidation.error.issues },
@@ -50,6 +50,15 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
       }
 
       const validatedMetadata = metadataValidation.data;
+
+      // Extract all expected tile hashes from metadata
+      const expectedHashes = new Set<string>();
+      for (const page of validatedMetadata.pages) {
+        for (const tile of page.tiles) {
+          expectedHashes.add(tile.hash.toLowerCase());
+        }
+      }
+
 
       // Validate form data (id + metadata)
       const formDataValidation = uploadFormDataSchema.safeParse({
@@ -80,7 +89,13 @@ const upload = new Hono<{ Bindings: Env; Variables: Variables }>()
           continue;
         }
 
-        const hash = match[1];
+        const hash = match[1].toLowerCase();
+
+        // Validate that this tile hash exists in the metadata
+        if (!expectedHashes.has(hash)) {
+          console.warn(`Skipping unexpected tile hash: ${hash}`);
+          continue;
+        }
 
         // Upload tile to R2
         const arrayBuffer = await value.arrayBuffer();

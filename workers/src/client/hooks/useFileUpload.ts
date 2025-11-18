@@ -14,9 +14,8 @@ export async function uploadTiles(
 
   onProgress(0);
 
-  // メタデータを構築
-  const metadata: Metadata = {
-    version: Date.now(),
+  // メタデータを構築（versionはサーバー側で設定される）
+  const metadata = {
     tile_size: tileSize,
     pages: pages.map((page) => ({
       page: page.pageNumber,

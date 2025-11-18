@@ -23,10 +23,19 @@ export const pageInfoSchema = z.object({
 });
 
 /**
- * メタデータスキーマ
+ * メタデータスキーマ（サーバー保存用）
  */
 export const metadataSchema = z.object({
   version: z.number().int().positive(),
+  tile_size: z.number().int().positive(),
+  pages: z.array(pageInfoSchema).min(1),
+});
+
+/**
+ * アップロード時のメタデータスキーマ（クライアント送信用）
+ * versionはサーバー側で設定されるため含まない
+ */
+export const uploadMetadataSchema = z.object({
   tile_size: z.number().int().positive(),
   pages: z.array(pageInfoSchema).min(1),
 });
@@ -45,5 +54,5 @@ export const uploadResponseSchema = z.object({
  */
 export const uploadFormDataSchema = z.object({
   id: z.string().min(1).max(255),
-  metadata: metadataSchema,
+  metadata: uploadMetadataSchema,
 });

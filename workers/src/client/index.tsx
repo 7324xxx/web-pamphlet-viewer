@@ -36,7 +36,16 @@ function App() {
     );
 
     if (droppedFiles.length > 0) {
-      setFiles(droppedFiles);
+      // Revoke old preview URLs before setting new files
+      setFiles((prevFiles) => {
+        prevFiles.forEach((file) => {
+          if (file.preview) {
+            URL.revokeObjectURL(file.preview);
+          }
+        });
+        return droppedFiles;
+      });
+
       // プレビュー用のURLを生成
       droppedFiles.forEach((file: FileWithPreview) => {
         file.preview = URL.createObjectURL(file);
@@ -51,7 +60,17 @@ function App() {
     );
 
     if (selectedFiles.length > 0) {
-      setFiles(selectedFiles);
+      // Revoke old preview URLs before setting new files
+      setFiles((prevFiles) => {
+        prevFiles.forEach((file) => {
+          if (file.preview) {
+            URL.revokeObjectURL(file.preview);
+          }
+        });
+        return selectedFiles;
+      });
+
+      // プレビュー用のURLを生成
       selectedFiles.forEach((file: FileWithPreview) => {
         file.preview = URL.createObjectURL(file);
       });
@@ -81,7 +100,12 @@ function App() {
 
       alert(`アップロード成功！\nID: ${result.id}\nVersion: ${result.version}`);
 
-      // リセット
+      // リセット（メモリリーク防止のためプレビューURLを解放）
+      files.forEach((file) => {
+        if (file.preview) {
+          URL.revokeObjectURL(file.preview);
+        }
+      });
       setFiles([]);
       setProcessedPages([]);
       setPamphletId('');
