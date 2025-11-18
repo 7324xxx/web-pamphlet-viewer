@@ -36,27 +36,23 @@ app.get('/', (c) => {
   });
 });
 
-// Mount routers
+// Mount routers and configure handlers
 const routes = app
   .route('/pamphlet', pamphlet)
-  .route('/admin', admin);
-
-// 404 handler
-routes.notFound((c) => {
-  return c.json({ error: 'Not found' }, 404);
-});
-
-// Error handler
-routes.onError((err, c) => {
-  console.error('Unhandled error:', err);
-  return c.json(
-    {
-      error: 'Internal server error',
-      message: err.message,
-    },
-    500
-  );
-});
+  .route('/admin', admin)
+  .notFound((c) => {
+    return c.json({ error: 'Not found' }, 404);
+  })
+  .onError((err, c) => {
+    console.error('Unhandled error:', err);
+    return c.json(
+      {
+        error: 'Internal server error',
+        message: err.message,
+      },
+      500
+    );
+  });
 
 // Export the app
 export default routes;
