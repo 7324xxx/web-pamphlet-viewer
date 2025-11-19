@@ -51,16 +51,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
       const client = createApiClient(apiBase);
-      const res = await (client.pamphlet as any)[':id'].metadata.$get({
-        param: { id: pamphletId },
-        query: { pages: `${start}-${end}` }
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch metadata: ${res.statusText}`);
-      }
-
-      const data = await res.json();
+      const data = await client.fetchMetadata(pamphletId, `${start}-${end}`);
 
       // 全ページ数を保存
       totalPagesCount = data.total_pages;
@@ -115,16 +106,13 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     fetchingPages = true;
 
     try {
-      // 10ページずつ取得
-      const batchSize = 10;
+      // Cloudflareなので大きめのバッチで効率的に取得
+      const batchSize = 50;
       const maxPage = metadata.pages[loadedPages - 1].page;
 
       for (let start = maxPage + 1; start < totalPagesCount; start += batchSize) {
         const end = Math.min(start + batchSize - 1, totalPagesCount - 1);
         await fetchMetadataRange(start, end);
-
-        // 少し待機（サーバー負荷軽減）
-        await new Promise(resolve => setTimeout(resolve, 100));
       }
 
       console.log(`All ${totalPagesCount} pages metadata loaded`);

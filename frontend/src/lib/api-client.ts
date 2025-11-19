@@ -1,14 +1,39 @@
-import { hc } from 'hono/client';
-import type { AppType } from '../types/api';
+import type { MetadataResponse } from '../types/api';
 
 /**
- * Create a typed Hono client for the API
+ * Create a typed API client with helper methods
  */
 export function createApiClient(baseUrl: string) {
-  return hc<AppType>(baseUrl);
-}
+  return {
+    /**
+     * Fetch metadata for a pamphlet
+     */
+    async fetchMetadata(
+      id: string,
+      pages?: string
+    ): Promise<MetadataResponse> {
+      const url = pages
+        ? `${baseUrl}/pamphlet/${id}/metadata?pages=${pages}`
+        : `${baseUrl}/pamphlet/${id}/metadata`;
 
-/**
- * Default API client (can be overridden)
- */
-export const apiClient = createApiClient('');
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch metadata: ${res.statusText}`);
+      }
+      return res.json();
+    },
+
+    /**
+     * Fetch a tile image
+     */
+    async fetchTile(id: string, hash: string): Promise<Blob> {
+      const url = `${baseUrl}/pamphlet/${id}/tile/${hash}`;
+
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Failed to fetch tile: ${res.statusText}`);
+      }
+      return res.blob();
+    }
+  };
+}

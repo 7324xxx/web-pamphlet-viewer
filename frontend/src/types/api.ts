@@ -22,5 +22,23 @@ export interface MetadataResponse {
   has_previous: boolean;
 }
 
-// Client type (simplified for hono/client)
-export type AppType = any;
+// Client interface for type-safe API calls
+export interface ApiClient {
+  pamphlet: {
+    [id: string]: {
+      metadata: {
+        $get: (args: {
+          param: { id: string };
+          query?: { pages?: string };
+        }) => Promise<Response>;
+      };
+      tile: {
+        [hash: string]: {
+          $get: (args: {
+            param: { id: string; hash: string };
+          }) => Promise<Response>;
+        };
+      };
+    };
+  };
+}

@@ -123,21 +123,13 @@ export class TileLoader {
   }
 
   /**
-   * 画像を取得（hono/client使用）
+   * 画像を取得
    */
   private async fetchImage(hash: string): Promise<HTMLImageElement> {
     const client = createApiClient(this.apiBase);
 
-    const res = await (client.pamphlet as any)[':id'].tile[':hash'].$get({
-      param: { id: this.pamphletId, hash }
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to fetch tile: ${res.statusText}`);
-    }
-
     // blobとして取得
-    const blob = await res.blob();
+    const blob = await client.fetchTile(this.pamphletId, hash);
 
     // blobからObjectURLを作成してImageに読み込み
     return new Promise((resolve, reject) => {
