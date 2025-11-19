@@ -14,8 +14,8 @@
     error?: string | null;
   } = $props();
 
-  const showInitialLoading = $derived(loading && totalTiles === 0);
-  const showTileProgress = $derived(loading && totalTiles > 0);
+  const showInitialLoading = $derived(loading && (!totalTiles || totalTiles === 0));
+  const showTileProgress = $derived(loading && totalTiles != null && totalTiles > 0);
 </script>
 
 {#if showInitialLoading}

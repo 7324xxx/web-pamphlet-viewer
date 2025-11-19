@@ -41,16 +41,18 @@
   }
 
   // 初期化
-  onMount(async () => {
+  onMount(() => {
     // 初期化
     viewer.initialize();
 
-    // メタデータ取得
-    await viewer.fetchMetadata();
+    // メタデータ取得（非同期）
+    (async () => {
+      await viewer.fetchMetadata();
 
-    if (viewer.metadata && viewer.currentPageData && canvasElement) {
-      await viewer.initializePage(viewer.currentPageData, canvasElement);
-    }
+      if (viewer.metadata && viewer.currentPageData && canvasElement) {
+        await viewer.initializePage(viewer.currentPageData, canvasElement);
+      }
+    })();
 
     // タッチジェスチャー初期化
     if (containerElement) {
