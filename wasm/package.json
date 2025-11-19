@@ -4,8 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "wasm-pack build --target nodejs --out-dir pkg",
-    "build:release": "wasm-pack build --release --target web --out-dir pkg",
+    "build": "wasm-pack build --release --target web --out-dir pkg && rm -f pkg/.gitignore",
     "test": "npm run build && vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",

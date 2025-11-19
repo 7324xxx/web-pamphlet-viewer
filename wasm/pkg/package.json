@@ -1,0 +1,18 @@
+{
+  "name": "tile-wasm",
+  "type": "module",
+  "collaborators": [
+    "Pamphlet Viewer Team"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "tile_wasm_bg.wasm",
+    "tile_wasm.js",
+    "tile_wasm.d.ts"
+  ],
+  "main": "tile_wasm.js",
+  "types": "tile_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,7 +1,3 @@
-# WASM build outputs
-pkg/
-target/
-
 # Node modules
 node_modules/
 
