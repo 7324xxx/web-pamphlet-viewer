@@ -2,8 +2,7 @@ import { hc } from 'hono/client';
 import type { AppType } from 'workers';
 import { CanvasRenderer } from '../lib/canvas-renderer';
 import { TileLoader } from '../lib/tile-loader';
-import { calculateViewportBounds, getVisibleTiles } from '../lib/viewport';
-import type { Metadata, Page } from '../types/metadata';
+import type { Metadata, Page, Tile } from '../types/metadata';
 
 /**
  * パンフレットビューアのロジックを管理するhook
@@ -161,12 +160,13 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       console.log(`[usePamphletViewer] Page ${pageData.page} is cached, rendering immediately`);
       loading = true;
 
-      // すべてのタイルを読み込み（キャッシュから高速）
-      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
-      for (const tile of pageData.tiles) {
-        const img = await tileLoader.loadTile(tile, 10);
-        tiles.push({ tile, img });
-      }
+      // すべてのタイルを並列読み込み（キャッシュから高速）
+      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = await Promise.all(
+        pageData.tiles.map(async (tile) => ({
+          tile,
+          img: await tileLoader.loadTile(tile, 10),
+        }))
+      );
 
       // ページを描画（キャッシュから復元）
       renderer.renderPage(pageData.page, pageData.width, pageData.height, tiles);

@@ -3,9 +3,7 @@
  * Handles all /pamphlet/* routes
  */
 
-import { zValidator } from '@hono/zod-validator';
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { createCacheMiddleware } from '../middleware/cache';
 import { loadMetadata } from '../middleware/metadata';
 import { deleteFromCache } from '../services/cache';
@@ -54,20 +52,6 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>()
 	 */
 	.get(
 		'/:id/metadata',
-		zValidator(
-			'query',
-			z.object({
-				pages: z
-					.string()
-					.regex(/^(\d+)-(\d+)$/)
-					.optional(),
-			}),
-			(result, c) => {
-				if (!result.success) {
-					return c.json({ error: 'Invalid page range format. Use: pages=0-5' }, 400);
-				}
-			}
-		),
 		loadMetadata,
 		async (c) => {
 			const metadata = c.get('metadata');
@@ -76,7 +60,7 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>()
 				return c.json({ error: 'Metadata not found' }, 404);
 			}
 
-			const { pages: pagesParam } = c.req.valid('query');
+			const pagesParam = c.req.query('pages');
 			const pageRange = parsePageRange(pagesParam ?? null);
 
 			if (!pageRange) {
