@@ -5,6 +5,15 @@ import { TileLoader } from '../lib/tile-loader';
 import type { Metadata, Page, Tile } from '../types/metadata';
 
 /**
+ * 見開き情報
+ */
+interface SpreadInfo {
+  leftPage: number | null;
+  rightPage: number | null;
+  isCover: boolean; // 表紙または裏表紙
+}
+
+/**
  * パンフレットビューアのロジックを管理するhook
  */
 export function usePamphletViewer(apiBase: string, pamphletId: string) {
@@ -19,12 +28,63 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   let totalTiles = $state(0);
   let fetchingPages = $state(false); // バックグラウンドフェッチ中
   let abortController = $state<AbortController | null>(null); // タイル読み込みキャンセル用
+  let isSpreadMode = $state(false); // 見開きモード（md以上で有効）
 
   // Computed values
   const currentPageData = $derived(metadata?.pages.find((p) => p.page === currentPage) ?? null);
   const totalPages = $derived(totalPagesCount || metadata?.pages.length || 0);
-  const canGoNext = $derived(currentPage < totalPages - 1);
-  const canGoPrev = $derived(currentPage > 0);
+
+  /**
+   * 現在の見開き情報を計算
+   */
+  const currentSpread = $derived<SpreadInfo>(
+    !isSpreadMode || totalPages === 0
+      ? {
+          leftPage: null,
+          rightPage: currentPage,
+          isCover: false,
+        }
+      : currentPage === 0
+        ? {
+            leftPage: null,
+            rightPage: 0,
+            isCover: true,
+          }
+        : currentPage === totalPages - 1
+          ? {
+              leftPage: totalPages - 1,
+              rightPage: null,
+              isCover: true,
+            }
+          : (() => {
+              const isOddPage = currentPage % 2 === 1;
+              return {
+                leftPage: isOddPage ? currentPage : currentPage - 1,
+                rightPage: isOddPage ? currentPage + 1 : currentPage,
+                isCover: false,
+              };
+            })()
+  );
+
+  const canGoNext = $derived(
+    !isSpreadMode
+      ? currentPage < totalPages - 1
+      : (() => {
+          const spread = currentSpread;
+          const nextPage = spread.rightPage !== null ? spread.rightPage + 1 : (spread.leftPage ?? 0) + 1;
+          return nextPage < totalPages;
+        })()
+  );
+
+  const canGoPrev = $derived(
+    !isSpreadMode
+      ? currentPage > 0
+      : (() => {
+          const spread = currentSpread;
+          const prevPage = spread.leftPage !== null ? spread.leftPage - 1 : (spread.rightPage ?? 0) - 1;
+          return prevPage >= 0;
+        })()
+  );
 
   /**
    * URLパラメータからページ番号を取得
@@ -50,7 +110,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
       const client = hc<AppType>(apiBase);
-      const res = await client.pamphlet[':id'].metadata.$get({
+      const res = await (client.pamphlet[':id'].metadata.$get as any)({
         param: { id: pamphletId },
         query: { pages: `${start}-${end}` },
       });
@@ -144,13 +204,22 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
+   * 見開きモードを設定
+   */
+  function setSpreadMode(enabled: boolean): void {
+    isSpreadMode = enabled;
+  }
+
+  /**
    * 隣接ページをプリフェッチ（バックグラウンド）
    */
   function prefetchAdjacentPages(currentPageNum: number): void {
     if (!metadata || !tileLoader || !renderer) return;
 
-    // プリフェッチ対象: 前後1ページ
-    const pagesToPrefetch = [currentPageNum - 1, currentPageNum + 1];
+    // プリフェッチ対象: 前後1ページ（見開きモードの場合は前後の見開き）
+    const pagesToPrefetch = isSpreadMode
+      ? [currentPageNum - 2, currentPageNum - 1, currentPageNum + 1, currentPageNum + 2]
+      : [currentPageNum - 1, currentPageNum + 1];
 
     pagesToPrefetch.forEach((pageNum) => {
       // 範囲チェック
@@ -210,7 +279,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
-   * ページを初期化
+   * ページを初期化（見開き対応）
    */
   async function initializePage(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
     if (!tileLoader || !metadata) return;
@@ -220,6 +289,22 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       renderer = new CanvasRenderer(canvasElement, metadata.tile_size, 5); // キャッシュサイズ5
     }
 
+    // 見開きモードかチェック
+    const spread = currentSpread;
+
+    if (isSpreadMode && spread.leftPage !== null && spread.rightPage !== null) {
+      // 見開きモード: 2ページ分を描画
+      const leftPageData = metadata.pages.find((p) => p.page === spread.leftPage);
+      const rightPageData = metadata.pages.find((p) => p.page === spread.rightPage);
+
+      if (leftPageData && rightPageData) {
+        await loadSpreadTiles(leftPageData, rightPageData);
+        prefetchAdjacentPages(currentPage);
+        return;
+      }
+    }
+
+    // 単ページモード（または表紙・裏表紙）
     // キャッシュチェック: キャッシュされている場合は即座に表示
     const cacheStats = renderer.getCacheStats();
     if (cacheStats.pages.includes(pageData.page)) {
@@ -312,6 +397,89 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
+   * 見開きのタイルを読み込み（2ページ分）
+   */
+  async function loadSpreadTiles(leftPageData: Page, rightPageData: Page): Promise<void> {
+    if (!renderer || !tileLoader) return;
+
+    // 前のページの描画をキャンセル
+    if (abortController) {
+      abortController.abort();
+      console.log('[usePamphletViewer] Previous spread rendering cancelled');
+    }
+
+    // 新しいAbortControllerを作成
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
+    loading = true;
+    loadingTiles = 0;
+    totalTiles = leftPageData.tiles.length + rightPageData.tiles.length;
+
+    try {
+      // 左右のページのタイルを並列で読み込み
+      const leftTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+      const rightTiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+
+      // 左ページのタイル読み込み
+      for (const tile of leftPageData.tiles) {
+        if (signal.aborted) {
+          console.log('[usePamphletViewer] Spread tile loading aborted');
+          return;
+        }
+
+        try {
+          const img = await tileLoader.loadTile(tile, 10);
+          leftTiles.push({ tile, img });
+          loadingTiles++;
+        } catch (err) {
+          if (signal.aborted) return;
+          console.error(`Failed to load left tile ${tile.x},${tile.y}:`, err);
+        }
+      }
+
+      // 右ページのタイル読み込み
+      for (const tile of rightPageData.tiles) {
+        if (signal.aborted) {
+          console.log('[usePamphletViewer] Spread tile loading aborted');
+          return;
+        }
+
+        try {
+          const img = await tileLoader.loadTile(tile, 10);
+          rightTiles.push({ tile, img });
+          loadingTiles++;
+        } catch (err) {
+          if (signal.aborted) return;
+          console.error(`Failed to load right tile ${tile.x},${tile.y}:`, err);
+        }
+      }
+
+      // キャンセルチェック（描画前）
+      if (signal.aborted) {
+        console.log('[usePamphletViewer] Spread rendering aborted before draw');
+        return;
+      }
+
+      // 見開きを描画
+      renderer.renderSpread(leftPageData, rightPageData, leftTiles, rightTiles);
+
+      console.log(`[usePamphletViewer] Spread (${leftPageData.page}, ${rightPageData.page}) rendered`);
+    } catch (err) {
+      if (signal.aborted) {
+        console.log('Spread tile loading cancelled');
+        return;
+      }
+      console.error('Failed to load spread tiles:', err);
+      error = 'Failed to load spread tiles';
+    } finally {
+      if (!signal.aborted) {
+        loading = false;
+      }
+    }
+  }
+
+  /**
    * ページ遷移
    */
   async function goToPage(page: number, canvasElement: HTMLCanvasElement): Promise<void> {
@@ -344,20 +512,55 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
-   * 次ページへ
+   * 次ページへ（見開き対応）
    */
   function nextPage(canvasElement: HTMLCanvasElement): void {
-    if (canGoNext) {
+    if (!canGoNext) return;
+
+    if (!isSpreadMode) {
       goToPage(currentPage + 1, canvasElement);
+      return;
+    }
+
+    // 見開きモード: 次の見開きへ
+    const spread = currentSpread;
+
+    if (currentPage === 0) {
+      // 表紙の次 → ページ1
+      goToPage(1, canvasElement);
+    } else if (spread.rightPage !== null) {
+      // 見開きの次 → 右ページの次
+      goToPage(spread.rightPage + 1, canvasElement);
+    } else if (spread.leftPage !== null) {
+      // 裏表紙（左のみ）の次はなし
+      // canGoNextがfalseのはずなので、ここには来ないはず
     }
   }
 
   /**
-   * 前ページへ
+   * 前ページへ（見開き対応）
    */
   function prevPage(canvasElement: HTMLCanvasElement): void {
-    if (canGoPrev) {
+    if (!canGoPrev) return;
+
+    if (!isSpreadMode) {
       goToPage(currentPage - 1, canvasElement);
+      return;
+    }
+
+    // 見開きモード: 前の見開きへ
+    const spread = currentSpread;
+
+    if (currentPage === totalPages - 1) {
+      // 裏表紙の前 → 最後の見開きの左ページ
+      const lastSpreadLeftPage = totalPages - 2;
+      goToPage(lastSpreadLeftPage, canvasElement);
+    } else if (spread.leftPage !== null && spread.leftPage === 0) {
+      // ページ0（表紙）の前はなし
+      // canGoPrevがfalseのはずなので、ここには来ないはず
+    } else if (spread.leftPage !== null) {
+      // 見開きの前 → 左ページの前
+      goToPage(spread.leftPage - 1, canvasElement);
     }
   }
 
@@ -413,10 +616,16 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     get fetchingPages() {
       return fetchingPages;
     },
+    get isSpreadMode() {
+      return isSpreadMode;
+    },
 
     // Computed
     get currentPageData() {
       return currentPageData;
+    },
+    get currentSpread() {
+      return currentSpread;
     },
     get totalPages() {
       return totalPages;
@@ -437,5 +646,6 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     nextPage,
     prevPage,
     redrawCurrentPage,
+    setSpreadMode,
   };
 }

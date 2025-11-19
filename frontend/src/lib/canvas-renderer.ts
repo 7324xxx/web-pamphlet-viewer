@@ -1,4 +1,4 @@
-import type { Tile } from '../types/metadata';
+import type { Tile, Page } from '../types/metadata';
 import { PageCache } from './page-cache';
 
 /**
@@ -158,6 +158,104 @@ export class CanvasRenderer {
     this.pageCache.set(pageNumber, offscreen);
 
     // メインCanvasに転送（1回のdrawImage）
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(this.dpr, this.dpr);
+    this.ctx.drawImage(offscreen, 0, 0);
+    this.ctx.restore();
+  }
+
+  /**
+   * 見開き（2ページ並べて）を描画
+   */
+  renderSpread(
+    leftPageData: Page,
+    rightPageData: Page,
+    leftTiles: Array<{ tile: Tile; img: HTMLImageElement }>,
+    rightTiles: Array<{ tile: Tile; img: HTMLImageElement }>
+  ): void {
+    // 見開き全体のサイズ（左右のページを横に並べる）
+    const spreadWidth = leftPageData.width + rightPageData.width;
+    const spreadHeight = Math.max(leftPageData.height, rightPageData.height);
+
+    this.pageWidth = spreadWidth;
+    this.pageHeight = spreadHeight;
+
+    // コンテナサイズを取得
+    const container = this.canvas.parentElement?.parentElement;
+    if (!container) {
+      console.error('Canvas container not found');
+      return;
+    }
+
+    // 初回のみコンテナサイズを保存
+    if (!this.isContainerHeightInitialized) {
+      this.fixedContainerHeight = container.clientHeight;
+      this.isContainerHeightInitialized = true;
+      console.log(`[CanvasRenderer] Fixed container height: ${this.fixedContainerHeight}px`);
+    }
+
+    const containerWidth = container.clientWidth;
+
+    // コンテナに収まる最大サイズを計算
+    const maxWidth = containerWidth - CanvasRenderer.CONTAINER_PADDING;
+    const maxHeight = (this.fixedContainerHeight ?? container.clientHeight) - CanvasRenderer.CONTAINER_PADDING;
+
+    // アスペクト比を維持しながら、コンテナいっぱいに表示
+    const scaleByWidth = maxWidth / spreadWidth;
+    const scaleByHeight = maxHeight / spreadHeight;
+    const scale = Math.min(scaleByWidth, scaleByHeight);
+
+    const displayWidth = spreadWidth * scale;
+    const displayHeight = spreadHeight * scale;
+
+    // Canvasサイズ調整（高DPI対応）
+    this.canvas.width = spreadWidth * this.dpr;
+    this.canvas.height = spreadHeight * this.dpr;
+
+    this.canvas.style.width = `${displayWidth}px`;
+    this.canvas.style.height = `${displayHeight}px`;
+
+    // transformをリセット
+    this.resetTransform();
+
+    // OffscreenCanvasに見開きを描画
+    console.log(`[CanvasRenderer] Rendering spread (${leftPageData.page}, ${rightPageData.page})`);
+    const offscreen = new OffscreenCanvas(spreadWidth, spreadHeight);
+    const offscreenCtx = offscreen.getContext('2d');
+
+    if (!offscreenCtx) {
+      throw new Error('Failed to get OffscreenCanvas context');
+    }
+
+    // 背景
+    offscreenCtx.fillStyle = '#f9fafb';
+    offscreenCtx.fillRect(0, 0, spreadWidth, spreadHeight);
+
+    // 左ページのタイル描画
+    for (const { tile, img } of leftTiles) {
+      const x = tile.x * this.tileSize;
+      const y = tile.y * this.tileSize;
+      try {
+        offscreenCtx.drawImage(img, x, y, this.tileSize, this.tileSize);
+      } catch (err) {
+        console.error(`Failed to draw left tile ${tile.x},${tile.y}:`, err);
+      }
+    }
+
+    // 右ページのタイル描画（左ページの幅分だけオフセット）
+    const rightPageOffsetX = leftPageData.width;
+    for (const { tile, img } of rightTiles) {
+      const x = rightPageOffsetX + tile.x * this.tileSize;
+      const y = tile.y * this.tileSize;
+      try {
+        offscreenCtx.drawImage(img, x, y, this.tileSize, this.tileSize);
+      } catch (err) {
+        console.error(`Failed to draw right tile ${tile.x},${tile.y}:`, err);
+      }
+    }
+
+    // メインCanvasに転送
     this.ctx.save();
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(this.dpr, this.dpr);

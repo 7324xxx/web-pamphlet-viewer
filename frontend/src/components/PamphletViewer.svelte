@@ -27,6 +27,9 @@
   // Touch gestures (initialized in effect)
   let touchGestures = $state<ReturnType<typeof useTouchGestures> | null>(null);
 
+  // Media query for spread mode (md以上で見開き表示)
+  let mediaQuery = $state<MediaQueryList | null>(null);
+
   /**
    * キーボードイベント
    */
@@ -44,6 +47,26 @@
   onMount(() => {
     // 初期化
     viewer.initialize();
+
+    // 見開きモードの監視（mdブレークポイント: 768px）
+    mediaQuery = window.matchMedia('(min-width: 768px)');
+    const handleMediaChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      viewer.setSpreadMode(e.matches);
+
+      // 見開きモードが切り替わった場合、現在のページを再描画
+      if (viewer.metadata && canvasElement) {
+        const pageData = viewer.currentPageData;
+        if (pageData) {
+          viewer.initializePage(pageData, canvasElement);
+        }
+      }
+    };
+
+    // 初回チェック
+    handleMediaChange(mediaQuery);
+
+    // リサイズ時の監視
+    mediaQuery.addEventListener('change', handleMediaChange);
 
     // メタデータ取得（非同期）
     (async () => {
@@ -75,6 +98,9 @@
 
     return () => {
       window.removeEventListener('keydown', handleKeydown);
+      if (mediaQuery) {
+        mediaQuery.removeEventListener('change', handleMediaChange);
+      }
       touchGestures?.cleanup();
     };
   });
