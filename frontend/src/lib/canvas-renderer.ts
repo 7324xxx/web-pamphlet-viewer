@@ -91,10 +91,8 @@ export class CanvasRenderer {
    * 複数のタイルを描画
    */
   drawTiles(tiles: Map<string, { tile: Tile; img: HTMLImageElement }>): void {
-    requestAnimationFrame(() => {
-      tiles.forEach(({ tile, img }) => {
-        this.drawTile(tile, img);
-      });
+    tiles.forEach(({ tile, img }) => {
+      this.drawTile(tile, img);
     });
   }
 

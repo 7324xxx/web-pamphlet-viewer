@@ -90,14 +90,28 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function fetchInitialMetadata(): Promise<void> {
     const initialPageCount = 6; // 最初に取得するページ数
     const urlPage = getPageFromUrl();
-    const startPage = Math.max(0, urlPage - 2);
-    const endPage = startPage + initialPageCount - 1;
 
-    await fetchMetadataRange(startPage, endPage);
+    // 最初にurlPageのメタデータのみを取得してtotalPagesCountを確認
+    await fetchMetadataRange(urlPage, urlPage);
 
-    // URLパラメータからページ番号を設定
-    if (metadata && urlPage < totalPagesCount) {
-      currentPage = urlPage;
+    // totalPagesCountが判明したので、urlPageを検証
+    const validatedUrlPage = Math.min(urlPage, Math.max(0, totalPagesCount - 1));
+
+    // 周辺ページを含めた範囲を計算
+    const startPage = Math.max(0, validatedUrlPage - 2);
+    const endPage = Math.min(startPage + initialPageCount - 1, totalPagesCount - 1);
+
+    // すでに取得済みのurlPage以外のページを取得
+    if (endPage > urlPage || startPage < urlPage) {
+      await fetchMetadataRange(startPage, endPage);
+    }
+
+    // ページ番号を設定（検証済みの値を使用）
+    currentPage = validatedUrlPage;
+
+    // URLパラメータが範囲外だった場合は修正
+    if (validatedUrlPage !== urlPage) {
+      updateUrlParam(validatedUrlPage);
     }
   }
 

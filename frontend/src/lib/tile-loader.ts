@@ -9,6 +9,8 @@ interface TileLoadTask {
   tile: Tile;
   priority: number;
   hash: string;
+  resolve: (img: HTMLImageElement) => void;
+  reject: (err: Error) => void;
 }
 
 /**
@@ -41,30 +43,21 @@ export class TileLoader {
       return cached;
     }
 
-    // 既に読み込み中の場合は待つ
-    if (this.loading.has(cacheKey)) {
-      return this.waitForLoad(cacheKey);
-    }
-
-    // キューに追加
+    // 既に読み込み中の場合は、新しいタスクとして登録（同じタイルの複数リクエストに対応）
     return new Promise((resolve, reject) => {
       this.queue.push({
         tile,
         priority,
         hash: tile.hash,
+        resolve,
+        reject,
       });
 
       // 優先度でソート（高い方が先）
       this.queue.sort((a, b) => b.priority - a.priority);
 
-      this.processQueue().then(() => {
-        const img = this.cache.get(cacheKey);
-        if (img) {
-          resolve(img);
-        } else {
-          reject(new Error(`Failed to load tile: ${cacheKey}`));
-        }
-      });
+      // キュー処理を開始（非同期で実行）
+      this.processQueue();
     });
   }
 
@@ -100,20 +93,29 @@ export class TileLoader {
       this.running++;
       this.loading.add(task.hash);
 
-      try {
-        const img = await this.fetchImage(task.hash);
-        this.cache.set(task.hash, img);
-      } catch (err) {
-        console.error(`Failed to fetch tile ${task.hash}:`, err);
-      } finally {
-        this.loading.delete(task.hash);
-        this.running--;
-      }
-    }
+      // 非同期でタイル取得を実行
+      (async () => {
+        try {
+          // キャッシュ再チェック（同じタイルの複数リクエスト対策）
+          const cached = this.cache.get(task.hash);
+          if (cached) {
+            task.resolve(cached);
+            return;
+          }
 
-    // まだキューが残っている場合は続行
-    if (this.queue.length > 0 && this.running < this.maxConcurrent) {
-      await this.processQueue();
+          const img = await this.fetchImage(task.hash);
+          this.cache.set(task.hash, img);
+          task.resolve(img);
+        } catch (err) {
+          console.error(`Failed to fetch tile ${task.hash}:`, err);
+          task.reject(err instanceof Error ? err : new Error(String(err)));
+        } finally {
+          this.loading.delete(task.hash);
+          this.running--;
+          // キュー処理を続行
+          this.processQueue();
+        }
+      })();
     }
   }
 
@@ -153,49 +155,10 @@ export class TileLoader {
   }
 
   /**
-   * 読み込み完了を待つ
-   */
-  private async waitForLoad(hash: string): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const check = () => {
-        const img = this.cache.get(hash);
-        if (img) {
-          resolve(img);
-        } else if (this.loading.has(hash)) {
-          setTimeout(check, 50);
-        } else {
-          reject(new Error(`Tile not found: ${hash}`));
-        }
-      };
-      check();
-    });
-  }
-
-  /**
    * キャッシュクリア
    */
   clearCache(): void {
     this.cache.clear();
-  }
-
-  /**
-   * 新しいタイルを最高優先度でキューの先頭に挿入
-   * （ページ遷移時に使用）
-   */
-  prioritizeTiles(tiles: Tile[], priority: number): void {
-    const newTasks = tiles.map(tile => ({
-      tile,
-      priority,
-      hash: tile.hash
-    }));
-
-    // キューの先頭に追加
-    this.queue.unshift(...newTasks);
-
-    // 優先度でソート（高い方が先）
-    this.queue.sort((a, b) => b.priority - a.priority);
-
-    console.log(`Prioritized ${tiles.length} tiles with priority ${priority}, queue size: ${this.queue.length}`);
   }
 
   /**
