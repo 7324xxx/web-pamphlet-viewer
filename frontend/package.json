@@ -9,8 +9,7 @@
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
     "svelte-check": "svelte-check",
-    "check": "svelte-check && tsc --noEmit",
-    "lint": "eslint src"
+    "check": "svelte-check && tsc --noEmit"
   },
   "dependencies": {
     "hono": "^4.10.6",
