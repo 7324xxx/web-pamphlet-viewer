@@ -1,7 +1,8 @@
 import type { Tile } from '../types/metadata';
+import { PageCache } from './page-cache';
 
 /**
- * Canvas描画管理
+ * Canvas描画管理（ページキャッシュ対応）
  */
 export class CanvasRenderer {
   private canvas: HTMLCanvasElement;
@@ -13,11 +14,14 @@ export class CanvasRenderer {
   private dpr: number;
   private pageWidth = 0;
   private pageHeight = 0;
+  private pageCache: PageCache;
+  private currentPageNumber = -1;
 
-  constructor(canvas: HTMLCanvasElement, tileSize: number) {
+  constructor(canvas: HTMLCanvasElement, tileSize: number, cacheSize = 5) {
     this.canvas = canvas;
     this.tileSize = tileSize;
     this.dpr = window.devicePixelRatio || 1;
+    this.pageCache = new PageCache(cacheSize);
 
     const ctx = canvas.getContext('2d');
     if (!ctx) {
@@ -57,6 +61,75 @@ export class CanvasRenderer {
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.fillStyle = '#f9fafb';
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.restore();
+  }
+
+  /**
+   * ページ全体を描画（キャッシュ対応）
+   */
+  renderPage(
+    pageNumber: number,
+    pageWidth: number,
+    pageHeight: number,
+    tiles: Array<{ tile: Tile; img: HTMLImageElement }>
+  ): void {
+    this.currentPageNumber = pageNumber;
+    this.pageWidth = pageWidth;
+    this.pageHeight = pageHeight;
+
+    // Canvasサイズ調整
+    this.canvas.width = pageWidth * this.dpr;
+    this.canvas.height = pageHeight * this.dpr;
+    this.canvas.style.width = `${pageWidth}px`;
+    this.canvas.style.height = `${pageHeight}px`;
+
+    // transformをリセット
+    this.resetTransform();
+
+    // キャッシュチェック
+    const cached = this.pageCache.get(pageNumber);
+    if (cached) {
+      console.log(`[CanvasRenderer] Page ${pageNumber} restored from cache`);
+      this.ctx.save();
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(this.dpr, this.dpr);
+      this.ctx.drawImage(cached, 0, 0);
+      this.ctx.restore();
+      return;
+    }
+
+    // 初回描画: OffscreenCanvasに描画
+    console.log(`[CanvasRenderer] Page ${pageNumber} rendering to cache (${tiles.length} tiles)`);
+    const offscreen = new OffscreenCanvas(pageWidth, pageHeight);
+    const offscreenCtx = offscreen.getContext('2d');
+
+    if (!offscreenCtx) {
+      throw new Error('Failed to get OffscreenCanvas context');
+    }
+
+    // 背景
+    offscreenCtx.fillStyle = '#f9fafb';
+    offscreenCtx.fillRect(0, 0, pageWidth, pageHeight);
+
+    // タイル描画
+    for (const { tile, img } of tiles) {
+      const x = tile.x * this.tileSize;
+      const y = tile.y * this.tileSize;
+      try {
+        offscreenCtx.drawImage(img, x, y, this.tileSize, this.tileSize);
+      } catch (err) {
+        console.error(`Failed to draw tile ${tile.x},${tile.y}:`, err);
+      }
+    }
+
+    // キャッシュに保存
+    this.pageCache.set(pageNumber, offscreen);
+
+    // メインCanvasに転送（1回のdrawImage）
+    this.ctx.save();
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(this.dpr, this.dpr);
+    this.ctx.drawImage(offscreen, 0, 0);
     this.ctx.restore();
   }
 
@@ -178,5 +251,19 @@ export class CanvasRenderer {
    */
   getContext(): CanvasRenderingContext2D {
     return this.ctx;
+  }
+
+  /**
+   * キャッシュ統計を取得
+   */
+  getCacheStats() {
+    return this.pageCache.getStats();
+  }
+
+  /**
+   * ページキャッシュをクリア
+   */
+  clearPageCache(): void {
+    this.pageCache.clear();
   }
 }

@@ -148,22 +148,38 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
    * ページを初期化
    */
   async function initializePage(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
-    if (!tileLoader) return;
+    if (!tileLoader || !metadata) return;
 
     // Rendererを初期化
     if (!renderer) {
-      renderer = new CanvasRenderer(canvasElement, metadata!.tile_size);
+      renderer = new CanvasRenderer(canvasElement, metadata.tile_size, 5); // キャッシュサイズ5
     }
 
-    // Canvasサイズを設定
-    renderer.initCanvas(pageData.width, pageData.height);
+    // キャッシュチェック: キャッシュされている場合は即座に表示
+    const cacheStats = renderer.getCacheStats();
+    if (cacheStats.pages.includes(pageData.page)) {
+      console.log(`[usePamphletViewer] Page ${pageData.page} is cached, rendering immediately`);
+      loading = true;
 
-    // タイルを読み込み
+      // すべてのタイルを読み込み（キャッシュから高速）
+      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
+      for (const tile of pageData.tiles) {
+        const img = await tileLoader.loadTile(tile, 10);
+        tiles.push({ tile, img });
+      }
+
+      // ページを描画（キャッシュから復元）
+      renderer.renderPage(pageData.page, pageData.width, pageData.height, tiles);
+      loading = false;
+      return;
+    }
+
+    // キャッシュにない場合: タイルを読み込み
     await loadPageTiles(pageData, canvasElement);
   }
 
   /**
-   * ページのタイルを読み込み
+   * ページのタイルを読み込み（初回描画用）
    */
   async function loadPageTiles(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
     if (!renderer || !tileLoader) return;
@@ -171,7 +187,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     // 前のページの描画をキャンセル（タイルダウンロードは続行してキャッシュに保存）
     if (abortController) {
       abortController.abort();
-      console.log('Previous page rendering cancelled');
+      console.log('[usePamphletViewer] Previous page rendering cancelled');
     }
 
     // 新しいAbortControllerを作成
@@ -183,62 +199,36 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     totalTiles = pageData.tiles.length;
 
     try {
-      // viewport計算
-      const bounds = calculateViewportBounds(canvasElement, metadata!.tile_size);
-      const visibleTiles = getVisibleTiles(pageData.tiles, bounds);
-      const remainingTiles = pageData.tiles.filter((t) => !visibleTiles.find((vt) => vt.x === t.x && vt.y === t.y));
+      // すべてのタイルを並列で読み込み
+      const tiles: Array<{ tile: Tile; img: HTMLImageElement }> = [];
 
-      // プレースホルダー描画
-      pageData.tiles.forEach((tile) => {
-        renderer!.drawPlaceholder(tile);
-      });
-
-      // 優先的に可視タイルを読み込み（優先度100で最優先）
-      for (const tile of visibleTiles) {
-        // キャンセルされたらループを抜ける
+      for (const tile of pageData.tiles) {
+        // キャンセルチェック
         if (signal.aborted) {
-          console.log('Visible tile rendering aborted');
+          console.log('[usePamphletViewer] Tile loading aborted');
           return;
         }
 
         try {
-          const img = await tileLoader.loadTile(tile, 100);
-
-          // 読み込み完了後もキャンセルチェック
-          if (signal.aborted) {
-            console.log('Tile rendering aborted after fetch');
-            return;
-          }
-
-          renderer.drawTile(tile, img);
-          loadingTiles++;
-        } catch (err) {
-          if (signal.aborted) return;
-          console.error(`Failed to load visible tile ${tile.x},${tile.y}:`, err);
-        }
-      }
-
-      // 残りのタイルを読み込み（優先度50で高優先）
-      for (const tile of remainingTiles) {
-        // キャンセルされたらループを抜ける
-        if (signal.aborted) {
-          console.log('Remaining tile rendering aborted');
-          return;
-        }
-
-        try {
-          const img = await tileLoader.loadTile(tile, 50);
-
-          // 読み込み完了後もキャンセルチェック
-          if (signal.aborted) return;
-
-          renderer.drawTile(tile, img);
+          const img = await tileLoader.loadTile(tile, 10); // 優先度10
+          tiles.push({ tile, img });
           loadingTiles++;
         } catch (err) {
           if (signal.aborted) return;
           console.error(`Failed to load tile ${tile.x},${tile.y}:`, err);
         }
       }
+
+      // キャンセルチェック（描画前）
+      if (signal.aborted) {
+        console.log('[usePamphletViewer] Rendering aborted before draw');
+        return;
+      }
+
+      // すべてのタイルが読み込まれたらページを描画（キャッシュに保存）
+      renderer.renderPage(pageData.page, pageData.width, pageData.height, tiles);
+
+      console.log(`[usePamphletViewer] Page ${pageData.page} rendered and cached`);
     } catch (err) {
       // キャンセルによる中断は正常なので、エラーログを出さない
       if (signal.aborted) {
