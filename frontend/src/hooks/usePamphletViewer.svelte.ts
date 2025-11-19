@@ -110,7 +110,15 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
       const client = hc<AppType>(apiBase);
-      const res = await (client.pamphlet[':id'].metadata.$get as any)({
+
+      // NOTE: Honoはクエリパラメータの型を自動推論しないため、
+      // 型アサーションが必要（パスパラメータのみは正常に推論される）
+      type MetadataGetFn = (opts: {
+        param: { id: string };
+        query: { pages: string };
+      }) => Promise<Response>;
+
+      const res = await (client.pamphlet[':id'].metadata.$get as MetadataGetFn)({
         param: { id: pamphletId },
         query: { pages: `${start}-${end}` },
       });
