@@ -1,6 +1,6 @@
-import type { Tile } from '../types/metadata';
 import { hc } from 'hono/client';
 import type { AppType } from 'workers';
+import type { Tile } from '../types/metadata';
 
 /**
  * タイル読み込みタスク
@@ -32,10 +32,7 @@ export class TileLoader {
   /**
    * タイルを読み込み
    */
-  async loadTile(
-    tile: Tile,
-    priority = 0
-  ): Promise<HTMLImageElement> {
+  async loadTile(tile: Tile, priority = 0): Promise<HTMLImageElement> {
     const cacheKey = tile.hash;
 
     // キャッシュチェック
@@ -54,7 +51,7 @@ export class TileLoader {
       this.queue.push({
         tile,
         priority,
-        hash: tile.hash
+        hash: tile.hash,
       });
 
       // 優先度でソート（高い方が先）
@@ -74,14 +71,11 @@ export class TileLoader {
   /**
    * 複数のタイルを読み込み
    */
-  async loadTiles(
-    tiles: Tile[],
-    priority = 0
-  ): Promise<Map<string, HTMLImageElement>> {
+  async loadTiles(tiles: Tile[], priority = 0): Promise<Map<string, HTMLImageElement>> {
     const results = new Map<string, HTMLImageElement>();
 
     await Promise.all(
-      tiles.map(async tile => {
+      tiles.map(async (tile) => {
         try {
           const img = await this.loadTile(tile, priority);
           const key = `${tile.x},${tile.y}`;
@@ -130,7 +124,7 @@ export class TileLoader {
     const client = hc<AppType>(this.apiBase);
 
     const res = await client.pamphlet[':id'].tile[':hash'].$get({
-      param: { id: this.pamphletId, hash }
+      param: { id: this.pamphletId, hash },
     });
 
     if (!res.ok) {
@@ -191,7 +185,7 @@ export class TileLoader {
     return {
       cached: this.cache.size,
       loading: this.loading.size,
-      queued: this.queue.length
+      queued: this.queue.length,
     };
   }
 }

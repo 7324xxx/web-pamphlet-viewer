@@ -3,14 +3,14 @@
  * Handles all /pamphlet/* routes
  */
 
-import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
+import { Hono } from 'hono';
 import { z } from 'zod';
-import type { Env, Variables } from '../types/bindings';
-import * as r2Service from '../services/r2';
-import { deleteFromCache } from '../services/cache';
-import { loadMetadata } from '../middleware/metadata';
 import { createCacheMiddleware } from '../middleware/cache';
+import { loadMetadata } from '../middleware/metadata';
+import { deleteFromCache } from '../services/cache';
+import * as r2Service from '../services/r2';
+import type { Env, Variables } from '../types/bindings';
 
 // Create cache middleware for tiles
 const tileCache = createCacheMiddleware(() => ({
@@ -70,31 +70,31 @@ const pamphlet = new Hono<{ Bindings: Env; Variables: Variables }>()
 		),
 		loadMetadata,
 		async (c) => {
-		const metadata = c.get('metadata');
+			const metadata = c.get('metadata');
 
-		if (!metadata) {
-			return c.json({ error: 'Metadata not found' }, 404);
+			if (!metadata) {
+				return c.json({ error: 'Metadata not found' }, 404);
+			}
+
+			const { pages: pagesParam } = c.req.valid('query');
+			const pageRange = parsePageRange(pagesParam ?? null);
+
+			if (!pageRange) {
+				return c.json({ error: 'Invalid page range format. Use: pages=0-5' }, 400);
+			}
+
+			const totalPages = metadata.pages.length;
+			const filteredPages = metadata.pages.filter((page) => page.page >= pageRange.start && page.page <= pageRange.end);
+
+			return c.json({
+				version: metadata.version,
+				tile_size: metadata.tile_size,
+				pages: filteredPages,
+				total_pages: totalPages,
+				has_more: pageRange.end < totalPages - 1,
+				has_previous: pageRange.start > 0,
+			});
 		}
-
-		const { pages: pagesParam } = c.req.valid('query');
-		const pageRange = parsePageRange(pagesParam ?? null);
-
-		if (!pageRange) {
-			return c.json({ error: 'Invalid page range format. Use: pages=0-5' }, 400);
-		}
-
-		const totalPages = metadata.pages.length;
-		const filteredPages = metadata.pages.filter((page) => page.page >= pageRange.start && page.page <= pageRange.end);
-
-		return c.json({
-			version: metadata.version,
-			tile_size: metadata.tile_size,
-			pages: filteredPages,
-			total_pages: totalPages,
-			has_more: pageRange.end < totalPages - 1,
-			has_previous: pageRange.start > 0,
-		});
-	}
 	)
 	/**
 	 * GET /:id/tile/:hash

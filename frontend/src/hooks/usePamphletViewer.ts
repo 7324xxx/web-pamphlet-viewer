@@ -1,7 +1,7 @@
 import { hc } from 'hono/client';
 import type { AppType } from 'workers';
-import { TileLoader } from '../lib/tile-loader';
 import { CanvasRenderer } from '../lib/canvas-renderer';
+import { TileLoader } from '../lib/tile-loader';
 import { calculateViewportBounds, getVisibleTiles } from '../lib/viewport';
 import type { Metadata, Page } from '../types/metadata';
 
@@ -21,9 +21,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   let fetchingPages = $state(false); // バックグラウンドフェッチ中
 
   // Computed values
-  const currentPageData = $derived(
-    metadata?.pages.find(p => p.page === currentPage) ?? null
-  );
+  const currentPageData = $derived(metadata?.pages.find((p) => p.page === currentPage) ?? null);
   const totalPages = $derived(totalPagesCount || metadata?.pages.length || 0);
   const canGoNext = $derived(currentPage < totalPages - 1);
   const canGoPrev = $derived(currentPage > 0);
@@ -54,7 +52,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       const client = hc<AppType>(apiBase);
       const res = await client.pamphlet[':id'].metadata.$get({
         param: { id: pamphletId },
-        query: { pages: `${start}-${end}` }
+        query: { pages: `${start}-${end}` },
       });
 
       if (!res.ok) {
@@ -71,13 +69,11 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
         metadata = {
           version: data.version,
           tile_size: data.tile_size,
-          pages: data.pages
+          pages: data.pages,
         };
       } else {
         // 追加取得: 既存のページにマージ
-        const newPages = data.pages.filter(
-          (newPage: Page) => !metadata!.pages.find(p => p.page === newPage.page)
-        );
+        const newPages = data.pages.filter((newPage: Page) => !metadata!.pages.find((p) => p.page === newPage.page));
         metadata.pages = [...metadata.pages, ...newPages].sort((a, b) => a.page - b.page);
       }
     } catch (err) {
@@ -136,10 +132,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   /**
    * ページを初期化
    */
-  async function initializePage(
-    pageData: Page,
-    canvasElement: HTMLCanvasElement
-  ): Promise<void> {
+  async function initializePage(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
     if (!tileLoader) return;
 
     // Rendererを初期化
@@ -157,10 +150,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   /**
    * ページのタイルを読み込み
    */
-  async function loadPageTiles(
-    pageData: Page,
-    canvasElement: HTMLCanvasElement
-  ): Promise<void> {
+  async function loadPageTiles(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
     if (!renderer || !tileLoader) return;
 
     loading = true;
@@ -171,12 +161,10 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       // viewport計算
       const bounds = calculateViewportBounds(canvasElement, metadata!.tile_size);
       const visibleTiles = getVisibleTiles(pageData.tiles, bounds);
-      const remainingTiles = pageData.tiles.filter(
-        t => !visibleTiles.find(vt => vt.x === t.x && vt.y === t.y)
-      );
+      const remainingTiles = pageData.tiles.filter((t) => !visibleTiles.find((vt) => vt.x === t.x && vt.y === t.y));
 
       // プレースホルダー描画
-      pageData.tiles.forEach(tile => {
+      pageData.tiles.forEach((tile) => {
         renderer!.drawPlaceholder(tile);
       });
 
@@ -218,7 +206,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     currentPage = page;
     updateUrlParam(page);
 
-    const pageData = metadata.pages.find(p => p.page === page);
+    const pageData = metadata.pages.find((p) => p.page === page);
     if (pageData) {
       await initializePage(pageData, canvasElement);
     }
@@ -270,20 +258,44 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
 
   return {
     // State
-    get metadata() { return metadata; },
-    get currentPage() { return currentPage; },
-    get loading() { return loading; },
-    get error() { return error; },
-    get renderer() { return renderer; },
-    get loadingTiles() { return loadingTiles; },
-    get totalTiles() { return totalTiles; },
-    get fetchingPages() { return fetchingPages; },
+    get metadata() {
+      return metadata;
+    },
+    get currentPage() {
+      return currentPage;
+    },
+    get loading() {
+      return loading;
+    },
+    get error() {
+      return error;
+    },
+    get renderer() {
+      return renderer;
+    },
+    get loadingTiles() {
+      return loadingTiles;
+    },
+    get totalTiles() {
+      return totalTiles;
+    },
+    get fetchingPages() {
+      return fetchingPages;
+    },
 
     // Computed
-    get currentPageData() { return currentPageData; },
-    get totalPages() { return totalPages; },
-    get canGoNext() { return canGoNext; },
-    get canGoPrev() { return canGoPrev; },
+    get currentPageData() {
+      return currentPageData;
+    },
+    get totalPages() {
+      return totalPages;
+    },
+    get canGoNext() {
+      return canGoNext;
+    },
+    get canGoPrev() {
+      return canGoPrev;
+    },
 
     // Methods
     initialize,
@@ -293,6 +305,6 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     goToPage,
     nextPage,
     prevPage,
-    redrawCurrentPage
+    redrawCurrentPage,
   };
 }

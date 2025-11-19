@@ -7,6 +7,13 @@
     "declarationMap": false,
     "outDir": "./dist/types"
   },
-  "include": ["worker-configuration.d.ts", "src/**/*"],
-  "exclude": ["test", "dist", "src/client/**/*"]
+  "include": [
+    "worker-configuration.d.ts",
+    "src/**/*"
+  ],
+  "exclude": [
+    "test",
+    "dist",
+    "src/client/**/*"
+  ]
 }
