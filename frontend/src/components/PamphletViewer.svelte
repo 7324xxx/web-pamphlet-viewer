@@ -47,11 +47,15 @@
 
     // メタデータ取得（非同期）
     (async () => {
-      await viewer.fetchMetadata();
+      // 最初の数ページのみ取得
+      await viewer.fetchInitialMetadata();
 
       if (viewer.metadata && viewer.currentPageData && canvasElement) {
         await viewer.initializePage(viewer.currentPageData, canvasElement);
       }
+
+      // バックグラウンドで残りのページを取得
+      viewer.fetchRemainingMetadata();
     })();
 
     // タッチジェスチャー初期化

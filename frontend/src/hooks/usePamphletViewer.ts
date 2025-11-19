@@ -9,6 +9,7 @@ import type { Metadata, Page } from '../types/metadata';
  */
 export function usePamphletViewer(apiBase: string, pamphletId: string) {
   let metadata = $state<Metadata | null>(null);
+  let totalPagesCount = $state(0); // 全ページ数
   let currentPage = $state(0);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -16,12 +17,13 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   let tileLoader = $state<TileLoader | null>(null);
   let loadingTiles = $state(0);
   let totalTiles = $state(0);
+  let fetchingPages = $state(false); // バックグラウンドフェッチ中
 
   // Computed values
   const currentPageData = $derived(
     metadata?.pages.find(p => p.page === currentPage) ?? null
   );
-  const totalPages = $derived(metadata?.pages.length ?? 0);
+  const totalPages = $derived(totalPagesCount || metadata?.pages.length || 0);
   const canGoNext = $derived(currentPage < totalPages - 1);
   const canGoPrev = $derived(currentPage > 0);
 
@@ -44,13 +46,14 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   }
 
   /**
-   * メタデータを取得
+   * メタデータを範囲指定で取得
    */
-  async function fetchMetadata(): Promise<void> {
+  async function fetchMetadataRange(start: number, end: number): Promise<void> {
     try {
       const client = createApiClient(apiBase);
       const res = await (client.pamphlet as any)[':id'].metadata.$get({
-        param: { id: pamphletId }
+        param: { id: pamphletId },
+        query: { pages: `${start}-${end}` }
       });
 
       if (!res.ok) {
@@ -58,20 +61,77 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
       }
 
       const data = await res.json();
-      metadata = {
-        version: data.version,
-        tile_size: data.tile_size,
-        pages: data.pages
-      };
 
-      // URLパラメータからページ番号を取得
-      const urlPage = getPageFromUrl();
-      if (metadata && urlPage < metadata.pages.length) {
-        currentPage = urlPage;
+      // 全ページ数を保存
+      totalPagesCount = data.total_pages;
+
+      if (!metadata) {
+        // 初回取得
+        metadata = {
+          version: data.version,
+          tile_size: data.tile_size,
+          pages: data.pages
+        };
+      } else {
+        // 追加取得: 既存のページにマージ
+        const newPages = data.pages.filter(
+          (newPage: Page) => !metadata!.pages.find(p => p.page === newPage.page)
+        );
+        metadata.pages = [...metadata.pages, ...newPages].sort((a, b) => a.page - b.page);
       }
     } catch (err) {
       error = err instanceof Error ? err.message : 'Failed to load metadata';
       console.error('Metadata fetch error:', err);
+      throw err;
+    }
+  }
+
+  /**
+   * 初回メタデータ取得（最初の数ページのみ）
+   */
+  async function fetchInitialMetadata(): Promise<void> {
+    const initialPageCount = 6; // 最初に取得するページ数
+    const urlPage = getPageFromUrl();
+    const startPage = Math.max(0, urlPage - 2);
+    const endPage = startPage + initialPageCount - 1;
+
+    await fetchMetadataRange(startPage, endPage);
+
+    // URLパラメータからページ番号を設定
+    if (metadata && urlPage < totalPagesCount) {
+      currentPage = urlPage;
+    }
+  }
+
+  /**
+   * 残りのメタデータをバックグラウンドで取得
+   */
+  async function fetchRemainingMetadata(): Promise<void> {
+    if (!metadata || fetchingPages) return;
+
+    const loadedPages = metadata.pages.length;
+    if (loadedPages >= totalPagesCount) return; // 全ページ取得済み
+
+    fetchingPages = true;
+
+    try {
+      // 10ページずつ取得
+      const batchSize = 10;
+      const maxPage = metadata.pages[loadedPages - 1].page;
+
+      for (let start = maxPage + 1; start < totalPagesCount; start += batchSize) {
+        const end = Math.min(start + batchSize - 1, totalPagesCount - 1);
+        await fetchMetadataRange(start, end);
+
+        // 少し待機（サーバー負荷軽減）
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      console.log(`All ${totalPagesCount} pages metadata loaded`);
+    } catch (err) {
+      console.error('Failed to fetch remaining metadata:', err);
+    } finally {
+      fetchingPages = false;
     }
   }
 
@@ -219,6 +279,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
     get renderer() { return renderer; },
     get loadingTiles() { return loadingTiles; },
     get totalTiles() { return totalTiles; },
+    get fetchingPages() { return fetchingPages; },
 
     // Computed
     get currentPageData() { return currentPageData; },
@@ -228,7 +289,8 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
 
     // Methods
     initialize,
-    fetchMetadata,
+    fetchInitialMetadata,
+    fetchRemainingMetadata,
     initializePage,
     goToPage,
     nextPage,
