@@ -19,6 +19,7 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   let loadingTiles = $state(0);
   let totalTiles = $state(0);
   let fetchingPages = $state(false); // バックグラウンドフェッチ中
+  let abortController = $state<AbortController | null>(null); // タイル読み込みキャンセル用
 
   // Computed values
   const currentPageData = $derived(metadata?.pages.find((p) => p.page === currentPage) ?? null);
@@ -153,6 +154,16 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
   async function loadPageTiles(pageData: Page, canvasElement: HTMLCanvasElement): Promise<void> {
     if (!renderer || !tileLoader) return;
 
+    // 前のページの描画をキャンセル（タイルダウンロードは続行してキャッシュに保存）
+    if (abortController) {
+      abortController.abort();
+      console.log('Previous page rendering cancelled');
+    }
+
+    // 新しいAbortControllerを作成
+    abortController = new AbortController();
+    const signal = abortController.signal;
+
     loading = true;
     loadingTiles = 0;
     totalTiles = pageData.tiles.length;
@@ -168,32 +179,65 @@ export function usePamphletViewer(apiBase: string, pamphletId: string) {
         renderer!.drawPlaceholder(tile);
       });
 
-      // 優先的に可視タイルを読み込み
+      // 優先的に可視タイルを読み込み（優先度100で最優先）
       for (const tile of visibleTiles) {
+        // キャンセルされたらループを抜ける
+        if (signal.aborted) {
+          console.log('Visible tile rendering aborted');
+          return;
+        }
+
         try {
-          const img = await tileLoader.loadTile(tile, 10);
+          const img = await tileLoader.loadTile(tile, 100);
+
+          // 読み込み完了後もキャンセルチェック
+          if (signal.aborted) {
+            console.log('Tile rendering aborted after fetch');
+            return;
+          }
+
           renderer.drawTile(tile, img);
           loadingTiles++;
         } catch (err) {
+          if (signal.aborted) return;
           console.error(`Failed to load visible tile ${tile.x},${tile.y}:`, err);
         }
       }
 
-      // 残りのタイルを読み込み
+      // 残りのタイルを読み込み（優先度50で高優先）
       for (const tile of remainingTiles) {
+        // キャンセルされたらループを抜ける
+        if (signal.aborted) {
+          console.log('Remaining tile rendering aborted');
+          return;
+        }
+
         try {
-          const img = await tileLoader.loadTile(tile, 1);
+          const img = await tileLoader.loadTile(tile, 50);
+
+          // 読み込み完了後もキャンセルチェック
+          if (signal.aborted) return;
+
           renderer.drawTile(tile, img);
           loadingTiles++;
         } catch (err) {
+          if (signal.aborted) return;
           console.error(`Failed to load tile ${tile.x},${tile.y}:`, err);
         }
       }
     } catch (err) {
+      // キャンセルによる中断は正常なので、エラーログを出さない
+      if (signal.aborted) {
+        console.log('Page tile loading cancelled');
+        return;
+      }
       console.error('Failed to load tiles:', err);
       error = 'Failed to load page tiles';
     } finally {
-      loading = false;
+      // キャンセルされていない場合のみloadingをfalseにする
+      if (!signal.aborted) {
+        loading = false;
+      }
     }
   }
 

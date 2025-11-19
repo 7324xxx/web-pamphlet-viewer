@@ -179,6 +179,26 @@ export class TileLoader {
   }
 
   /**
+   * 新しいタイルを最高優先度でキューの先頭に挿入
+   * （ページ遷移時に使用）
+   */
+  prioritizeTiles(tiles: Tile[], priority: number): void {
+    const newTasks = tiles.map(tile => ({
+      tile,
+      priority,
+      hash: tile.hash
+    }));
+
+    // キューの先頭に追加
+    this.queue.unshift(...newTasks);
+
+    // 優先度でソート（高い方が先）
+    this.queue.sort((a, b) => b.priority - a.priority);
+
+    console.log(`Prioritized ${tiles.length} tiles with priority ${priority}, queue size: ${this.queue.length}`);
+  }
+
+  /**
    * 統計情報
    */
   getStats() {
