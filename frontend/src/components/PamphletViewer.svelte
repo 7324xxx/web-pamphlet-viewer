@@ -1,4 +1,4 @@
-<svelte:options customElement="pamphlet-viewer" />
+<svelte:options customElement={{ tag: "pamphlet-viewer", shadow: "none" }} />
 
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -81,7 +81,15 @@
 
 </script>
 
-<div class="relative w-full h-full flex flex-col bg-gray-50">
+<style>
+  :global(pamphlet-viewer) {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+</style>
+
+<div class="relative w-full h-full flex flex-col bg-gray-50" style="width: 100%; height: 100%;">
   {#if !viewer.metadata && (viewer.loading || viewer.error)}
     <LoadingOverlay
       loading={viewer.loading}
