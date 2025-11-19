@@ -101,13 +101,30 @@ export async function getMetadata(env: Env, pamphletId: string): Promise<unknown
  * Delete a pamphlet and all its tiles
  * @param env Environment bindings
  * @param pamphletId Pamphlet ID
+ * @returns Number of objects deleted
  */
-export async function deletePamphlet(env: Env, pamphletId: string): Promise<void> {
-  // List all objects with the prefix
+export async function deletePamphlet(env: Env, pamphletId: string): Promise<number> {
   const prefix = `pamphlets/${pamphletId}/`;
-  const list = await env.R2_BUCKET.list({ prefix });
+  let totalDeleted = 0;
+  let cursor: string | undefined;
 
-  // Delete all objects in parallel
-  const deletePromises = list.objects.map((obj) => env.R2_BUCKET.delete(obj.key));
-  await Promise.all(deletePromises);
+  // R2 list() returns max 1000 objects per call, so we need pagination
+  do {
+    const list = await env.R2_BUCKET.list({
+      prefix,
+      cursor,
+      limit: 1000
+    });
+
+    if (list.objects.length > 0) {
+      // Use deleteMultiple() to delete up to 1000 objects in a single call
+      const keys = list.objects.map((obj) => obj.key);
+      await env.R2_BUCKET.delete(keys);
+      totalDeleted += keys.length;
+    }
+
+    cursor = list.truncated ? list.cursor : undefined;
+  } while (cursor);
+
+  return totalDeleted;
 }

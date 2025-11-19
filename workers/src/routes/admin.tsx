@@ -27,9 +27,13 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 	.route('/upload', upload)
 	/**
 	 * DELETE /admin/delete/:id
-	 * Delete pamphlet data (R2) and caches
+	 * Delete pamphlet data (R2) and metadata cache
+	 *
+	 * Note: Tile caches are NOT deleted to avoid subrequest limits.
+	 * They will expire naturally after 30 days (TTL), and since R2 data
+	 * is deleted, any cache hits will fail to serve content.
 	 */
-	.get('/delete/:id', loadMetadata, async (c) => {
+	.delete('/delete/:id', loadMetadata, async (c) => {
 		const pamphletId = c.req.param('id');
 
 		if (!pamphletId) {
@@ -37,45 +41,31 @@ const admin = new Hono<{ Bindings: Env; Variables: Variables }>()
 		}
 
 		try {
-			// 1. Get metadata from context (loaded by middleware)
-			const metadata = c.get('metadata') as Metadata;
+			// 1. Delete all R2 objects (metadata + tiles)
+			// This is the most important step - removes actual data
+			// Uses R2 deleteMultiple() to efficiently delete up to 1000 objects per call
+			const r2ObjectsDeleted = await r2Service.deletePamphlet(c.env, pamphletId);
 
-			// 2. Collect all unique tile hashes for cache deletion
-			const tileHashes = new Set<string>();
-			for (const page of metadata.pages) {
-				for (const tile of page.tiles) {
-					tileHashes.add(tile.hash);
-				}
-			}
-
-			// 3. Delete all R2 objects (metadata + tiles)
-			await r2Service.deletePamphlet(c.env, pamphletId);
-
-			// 4. Delete metadata cache
+			// 2. Delete metadata cache
+			// This prevents clients from discovering tile URLs
 			const metadataUrl = new URL(c.req.url);
 			metadataUrl.pathname = `/pamphlet/${pamphletId}/metadata`;
 			const metadataCacheDeleted = await deleteFromCache(metadataUrl.toString());
 
-			// 5. Delete tile caches in parallel
-			const deleteCachePromises = Array.from(tileHashes).map(async (hash) => {
-				const tileUrl = new URL(c.req.url);
-				tileUrl.pathname = `/pamphlet/${pamphletId}/tile/${hash}`;
-				const deleted = await deleteFromCache(tileUrl.toString());
-				return deleted ? 1 : 0;
-			});
-
-			const results = await Promise.all(deleteCachePromises);
-			const tileCachesDeleted = results.reduce<number>((sum, count) => sum + count, 0);
+			// Note: Tile caches are NOT deleted due to Cloudflare Workers subrequest limits (50/request)
+			// - Large pamphlets can have hundreds of unique tiles
+			// - Tile caches will expire after 30 days (s-maxage=2592000)
+			// - Since R2 data is deleted, cached tiles cannot be re-validated
+			// - Metadata cache deletion prevents new clients from finding tile URLs
 
 			return c.json({
 				id: pamphletId,
 				status: 'ok',
-				message: 'Pamphlet deleted successfully',
+				message: 'Pamphlet deleted successfully (tile caches will expire in 30 days)',
 				deleted: {
-					r2: true,
+					r2Objects: r2ObjectsDeleted,
 					metadataCache: metadataCacheDeleted,
-					tileCaches: tileCachesDeleted,
-					totalCaches: metadataCacheDeleted ? tileCachesDeleted + 1 : tileCachesDeleted,
+					tileCaches: 'skipped (will expire via TTL)',
 				},
 			});
 		} catch (error) {

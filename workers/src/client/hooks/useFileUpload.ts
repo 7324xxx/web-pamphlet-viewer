@@ -1,5 +1,9 @@
 import type { ProcessedPage, UploadResponse } from '../types';
 
+/**
+ * Upload tiles in chunks to avoid payload size limits
+ * Strategy: Upload tiles in batches, then finalize with metadata
+ */
 export async function uploadTiles(
 	pages: ProcessedPage[],
 	pamphletId: string,
@@ -27,36 +31,67 @@ export async function uploadTiles(
 		})),
 	};
 
-	// FormDataを構築（ハッシュベース、重複排除）
-	const formData = new FormData();
-	formData.append('id', pamphletId);
-	formData.append('metadata', JSON.stringify(metadata));
-
-	const addedHashes = new Set<string>();
+	// Collect unique tiles (deduplication)
+	const uniqueTiles = new Map<string, Uint8Array>();
 	for (const page of pages) {
 		for (const tile of page.tiles) {
-			if (!addedHashes.has(tile.hash)) {
-				// Create new Uint8Array from the data to ensure ArrayBuffer type
-				const dataArray = new Uint8Array(tile.data);
-				const blob = new Blob([dataArray], { type: 'image/webp' });
-				formData.append(`tile-${tile.hash}`, blob);
-				addedHashes.add(tile.hash);
+			if (!uniqueTiles.has(tile.hash)) {
+				uniqueTiles.set(tile.hash, tile.data);
 			}
 		}
 	}
 
-	// Hono RPC not supported this
-	const res = await fetch('/admin/upload', {
-		method: 'POST',
-		body: formData,
-	});
+	const totalTiles = uniqueTiles.size;
+	const CHUNK_SIZE = 100; // Upload 100 tiles per request
+	const tiles = Array.from(uniqueTiles.entries());
+	let uploadedTiles = 0;
 
-	if (!res.ok) {
-		const errorText = await res.text();
-		throw new Error(`Upload failed: ${res.status} ${errorText}`);
+	// Upload tiles in chunks
+	for (let i = 0; i < tiles.length; i += CHUNK_SIZE) {
+		const chunk = tiles.slice(i, i + CHUNK_SIZE);
+		const formData = new FormData();
+		formData.append('id', pamphletId);
+
+		// Add tiles to FormData
+		for (const [hash, data] of chunk) {
+			const blob = new Blob([data.buffer as ArrayBuffer], { type: 'image/webp' });
+			formData.append(`tile-${hash}`, blob);
+		}
+
+		// Upload chunk
+		const res = await fetch('/admin/upload/tiles', {
+			method: 'POST',
+			body: formData,
+		});
+
+		if (!res.ok) {
+			const errorText = await res.text();
+			throw new Error(`Tile upload failed: ${res.status} ${errorText}`);
+		}
+
+		uploadedTiles += chunk.length;
+		const progress = Math.floor((uploadedTiles / totalTiles) * 90); // Reserve 10% for metadata
+		onProgress(progress);
 	}
 
-	const result = (await res.json()) as UploadResponse;
+	// Finalize upload with metadata
+	const completeRes = await fetch('/admin/upload/complete', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			id: pamphletId,
+			metadata,
+		}),
+	});
+
+	if (!completeRes.ok) {
+		const errorText = await completeRes.text();
+		throw new Error(`Upload completion failed: ${completeRes.status} ${errorText}`);
+	}
+
+	const result = (await completeRes.json()) as UploadResponse;
 	onProgress(100);
 
 	return result;
