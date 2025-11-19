@@ -16,15 +16,17 @@ export interface ViewportBounds {
 export function calculateViewportBounds(
   canvas: HTMLCanvasElement,
   tileSize: number,
-  scale = 1
+  scale = 1,
+  panX = 0,
+  panY = 0
 ): ViewportBounds {
   const rect = canvas.getBoundingClientRect();
 
   // 表示領域全体を含むタイル範囲を計算
-  const minX = Math.floor(0 / tileSize);
-  const maxX = Math.ceil((rect.width / scale) / tileSize);
-  const minY = Math.floor(0 / tileSize);
-  const maxY = Math.ceil((rect.height / scale) / tileSize);
+  const minX = Math.floor(panX / tileSize);
+  const maxX = Math.ceil((panX + rect.width / scale) / tileSize);
+  const minY = Math.floor(panY / tileSize);
+  const maxY = Math.ceil((panY + rect.height / scale) / tileSize);
 
   return { minX, maxX, minY, maxY };
 }
