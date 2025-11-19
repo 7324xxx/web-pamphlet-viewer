@@ -20,7 +20,7 @@
     <canvas
       bind:this={canvasElement}
       class="shadow-lg"
-      style="max-width: 100%; max-height: 100%; object-fit: contain;"
+      style="max-width: 100%; max-height: 100%;"
     ></canvas>
   </div>
 </div>

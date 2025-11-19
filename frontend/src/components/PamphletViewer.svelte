@@ -89,7 +89,7 @@
   }
 </style>
 
-<div class="relative w-full h-full flex flex-col bg-gray-50" style="width: 100%; height: 100%;">
+<div class="relative w-full h-full flex flex-col bg-gray-50">
   {#if !viewer.metadata && (viewer.loading || viewer.error)}
     <LoadingOverlay
       loading={viewer.loading}

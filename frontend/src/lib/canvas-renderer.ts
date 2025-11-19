@@ -5,6 +5,8 @@ import { PageCache } from './page-cache';
  * Canvas描画管理（ページキャッシュ対応）
  */
 export class CanvasRenderer {
+  private static readonly CONTAINER_PADDING = 32; // コンテナとCanvas間のパディング（px）
+
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private tileSize: number;
@@ -15,7 +17,8 @@ export class CanvasRenderer {
   private pageWidth = 0;
   private pageHeight = 0;
   private pageCache: PageCache;
-  private fixedContainerHeight = 0; // 初回計算時のコンテナ高さを保存
+  private fixedContainerHeight: number | null = null; // 初回計算時のコンテナ高さを保存
+  private isContainerHeightInitialized = false; // コンテナ高さ初期化フラグ
 
   constructor(canvas: HTMLCanvasElement, tileSize: number, cacheSize = 5) {
     this.canvas = canvas;
@@ -84,16 +87,17 @@ export class CanvasRenderer {
     }
 
     // 初回のみコンテナサイズを保存
-    if (this.fixedContainerHeight === 0) {
+    if (!this.isContainerHeightInitialized) {
       this.fixedContainerHeight = container.clientHeight;
+      this.isContainerHeightInitialized = true;
       console.log(`[CanvasRenderer] Fixed container height: ${this.fixedContainerHeight}px`);
     }
 
     const containerWidth = container.clientWidth;
 
-    // コンテナに収まる最大サイズを計算（幅と高さ両方を考慮、パディング32px）
-    const maxWidth = containerWidth - 32;
-    const maxHeight = this.fixedContainerHeight - 32;
+    // コンテナに収まる最大サイズを計算（幅と高さ両方を考慮、パディング考慮）
+    const maxWidth = containerWidth - CanvasRenderer.CONTAINER_PADDING;
+    const maxHeight = (this.fixedContainerHeight ?? container.clientHeight) - CanvasRenderer.CONTAINER_PADDING;
 
     // アスペクト比を維持しながら、コンテナいっぱいに表示
     const scaleByWidth = maxWidth / pageWidth;
