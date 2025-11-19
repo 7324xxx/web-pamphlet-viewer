@@ -16,6 +16,7 @@ export class CanvasRenderer {
   private pageHeight = 0;
   private pageCache: PageCache;
   private currentPageNumber = -1;
+  private fixedContainerHeight = 0; // 初回計算時のコンテナ高さを保存
 
   constructor(canvas: HTMLCanvasElement, tileSize: number, cacheSize = 5) {
     this.canvas = canvas;
@@ -77,11 +78,40 @@ export class CanvasRenderer {
     this.pageWidth = pageWidth;
     this.pageHeight = pageHeight;
 
-    // Canvasサイズ調整
+    // コンテナサイズを取得
+    const container = this.canvas.parentElement?.parentElement;
+    if (!container) {
+      console.error('Canvas container not found');
+      return;
+    }
+
+    // 初回のみコンテナサイズを保存
+    if (this.fixedContainerHeight === 0) {
+      this.fixedContainerHeight = container.clientHeight;
+      console.log(`[CanvasRenderer] Fixed container height: ${this.fixedContainerHeight}px`);
+    }
+
+    const containerWidth = container.clientWidth;
+
+    // コンテナに収まる最大サイズを計算（幅と高さ両方を考慮、パディング32px）
+    const maxWidth = containerWidth - 32;
+    const maxHeight = this.fixedContainerHeight - 32;
+
+    // アスペクト比を維持しながら、コンテナいっぱいに表示
+    const scaleByWidth = maxWidth / pageWidth;
+    const scaleByHeight = maxHeight / pageHeight;
+    const scale = Math.min(scaleByWidth, scaleByHeight); // 小さい方を採用（はみ出さないように）
+
+    const displayWidth = pageWidth * scale;
+    const displayHeight = pageHeight * scale;
+
+    // Canvasサイズ調整（高DPI対応）
     this.canvas.width = pageWidth * this.dpr;
     this.canvas.height = pageHeight * this.dpr;
-    this.canvas.style.width = `${pageWidth}px`;
-    this.canvas.style.height = `${pageHeight}px`;
+
+    // 高さ基準で固定スケール（レイアウトシフト防止）
+    this.canvas.style.width = `${displayWidth}px`;
+    this.canvas.style.height = `${displayHeight}px`;
 
     // transformをリセット
     this.resetTransform();
