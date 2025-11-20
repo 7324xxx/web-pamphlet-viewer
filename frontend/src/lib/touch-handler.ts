@@ -81,6 +81,7 @@ export class TouchHandler {
       // ダブルタップ検出
       const now = Date.now();
       if (now - this.lastTapTime < this.doubleTapDelay) {
+        e.preventDefault(); // ブラウザのデフォルトズームを防止
         this.callbacks.onDoubleTap?.();
         this.lastTapTime = 0; // リセット
       } else {
@@ -129,10 +130,15 @@ export class TouchHandler {
     if (e.touches.length === 0) {
       // すべてのタッチが終了
 
+      // 最終タッチ位置を取得（changedTouches から）
+      const finalTouch = e.changedTouches[0];
+      const finalX = finalTouch.clientX;
+      const finalY = finalTouch.clientY;
+
       // スワイプ検出（ズーム中でない場合のみ）
       if (!this.isPanning && this.currentScale <= 1) {
-        const deltaX = this.lastTouchX - this.swipeStartX;
-        const deltaY = Math.abs(this.lastTouchY - this.swipeStartY);
+        const deltaX = finalX - this.swipeStartX;
+        const deltaY = Math.abs(finalY - this.swipeStartY);
 
         // 横方向のスワイプで、縦方向の移動が少ない場合
         if (deltaY < this.swipeMaxVertical) {
@@ -157,7 +163,7 @@ export class TouchHandler {
       this.initialDistance = 0;
     } else if (e.touches.length === 1) {
       // 2本指から1本指になった（ピンチズーム終了）
-      this.currentScale = this.getCurrentScale();
+      // currentScaleは既にonZoomコールバック内で更新されているため、ここでの処理は不要
       this.initialDistance = 0;
 
       // 1本指になったので、パン可能状態を更新
