@@ -9,7 +9,6 @@ export interface TouchState {
 }
 
 export interface TouchHandlerCallbacks {
-  onZoom?: (scale: number) => void;
   onPan?: (deltaX: number, deltaY: number) => void;
   onSwipeLeft?: () => void;
   onSwipeRight?: () => void;
@@ -20,14 +19,8 @@ export class TouchHandler {
   private element: HTMLElement;
   private callbacks: TouchHandlerCallbacks;
 
-  // ピンチズーム用
-  private initialDistance = 0;
-  private currentScale = 1;
-  private minScale = 0.5;
-  private maxScale = 5;
-
-  // パン用
-  private isPanning = false;
+  // パン/ドラッグ用
+  private isDragging = false;
   private lastTouchX = 0;
   private lastTouchY = 0;
 
@@ -45,6 +38,9 @@ export class TouchHandler {
   private boundHandleTouchStart: (e: TouchEvent) => void;
   private boundHandleTouchMove: (e: TouchEvent) => void;
   private boundHandleTouchEnd: (e: TouchEvent) => void;
+  private boundHandleMouseDown: (e: MouseEvent) => void;
+  private boundHandleMouseMove: (e: MouseEvent) => void;
+  private boundHandleMouseUp: (e: MouseEvent) => void;
   private boundHandleContextMenu: (e: Event) => void;
 
   constructor(element: HTMLElement, callbacks: TouchHandlerCallbacks) {
@@ -55,6 +51,9 @@ export class TouchHandler {
     this.boundHandleTouchStart = this.handleTouchStart.bind(this);
     this.boundHandleTouchMove = this.handleTouchMove.bind(this);
     this.boundHandleTouchEnd = this.handleTouchEnd.bind(this);
+    this.boundHandleMouseDown = this.handleMouseDown.bind(this);
+    this.boundHandleMouseMove = this.handleMouseMove.bind(this);
+    this.boundHandleMouseUp = this.handleMouseUp.bind(this);
     this.boundHandleContextMenu = (e: Event) => e.preventDefault();
 
     this.setupListeners();
@@ -66,16 +65,18 @@ export class TouchHandler {
     this.element.addEventListener('touchmove', this.boundHandleTouchMove, { passive: false });
     this.element.addEventListener('touchend', this.boundHandleTouchEnd, { passive: true });
 
+    // マウスイベント
+    this.element.addEventListener('mousedown', this.boundHandleMouseDown);
+    // mousemoveとmouseupはwindowに登録（要素外でのドラッグ継続のため）
+    window.addEventListener('mousemove', this.boundHandleMouseMove);
+    window.addEventListener('mouseup', this.boundHandleMouseUp);
+
     // コンテキストメニュー無効化（長押し時のメニュー）
     this.element.addEventListener('contextmenu', this.boundHandleContextMenu);
   }
 
   private handleTouchStart(e: TouchEvent): void {
-    if (e.touches.length === 2) {
-      // ピンチズーム開始
-      this.initialDistance = this.getDistance(e.touches[0], e.touches[1]);
-      e.preventDefault();
-    } else if (e.touches.length === 1) {
+    if (e.touches.length === 1) {
       const touch = e.touches[0];
 
       // ダブルタップ検出
@@ -88,32 +89,20 @@ export class TouchHandler {
         this.lastTapTime = now;
       }
 
-      // スワイプ・パン用の初期位置記録
+      // スワイプ・ドラッグ用の初期位置記録
       this.swipeStartX = touch.clientX;
       this.swipeStartY = touch.clientY;
       this.lastTouchX = touch.clientX;
       this.lastTouchY = touch.clientY;
 
-      // ズーム中はパンを有効化
-      if (this.currentScale > 1) {
-        this.isPanning = true;
-      }
+      // 常にドラッグ可能
+      this.isDragging = true;
     }
   }
 
   private handleTouchMove(e: TouchEvent): void {
-    if (e.touches.length === 2) {
-      // ピンチズーム
-      e.preventDefault();
-      const currentDistance = this.getDistance(e.touches[0], e.touches[1]);
-      const scale = (currentDistance / this.initialDistance) * this.currentScale;
-
-      // スケール制限
-      const clampedScale = Math.max(this.minScale, Math.min(this.maxScale, scale));
-
-      this.callbacks.onZoom?.(clampedScale);
-    } else if (e.touches.length === 1 && this.isPanning) {
-      // パン（ズーム時のみ）
+    if (e.touches.length === 1 && this.isDragging) {
+      // ドラッグ/パン（常時有効）
       e.preventDefault();
       const touch = e.touches[0];
       const deltaX = touch.clientX - this.lastTouchX;
@@ -135,70 +124,57 @@ export class TouchHandler {
       const finalX = finalTouch.clientX;
       const finalY = finalTouch.clientY;
 
-      // スワイプ検出（ズーム中でない場合のみ）
-      if (!this.isPanning && this.currentScale <= 1) {
-        const deltaX = finalX - this.swipeStartX;
-        const deltaY = Math.abs(finalY - this.swipeStartY);
+      // スワイプ検出
+      const deltaX = finalX - this.swipeStartX;
+      const deltaY = Math.abs(finalY - this.swipeStartY);
 
-        // 横方向のスワイプで、縦方向の移動が少ない場合
-        if (deltaY < this.swipeMaxVertical) {
-          if (deltaX > this.swipeThreshold) {
-            // 右スワイプ（前のページへ）
-            this.callbacks.onSwipeRight?.();
-          } else if (deltaX < -this.swipeThreshold) {
-            // 左スワイプ（次のページへ）
-            this.callbacks.onSwipeLeft?.();
-          }
+      // 横方向のスワイプで、縦方向の移動が少ない場合
+      if (deltaY < this.swipeMaxVertical) {
+        if (deltaX > this.swipeThreshold) {
+          // 右スワイプ（前のページへ）
+          this.callbacks.onSwipeRight?.();
+        } else if (deltaX < -this.swipeThreshold) {
+          // 左スワイプ（次のページへ）
+          this.callbacks.onSwipeLeft?.();
         }
       }
 
-      this.isPanning = false;
-
-      // ピンチズーム終了時、現在のスケールを保存
-      if (e.changedTouches.length === 1 && this.initialDistance > 0) {
-        // 最後のタッチが離れた時点のスケールを保存
-        // （onZoomで既に反映されているため、特に処理不要）
-      }
-
-      this.initialDistance = 0;
-    } else if (e.touches.length === 1) {
-      // 2本指から1本指になった（ピンチズーム終了）
-      // currentScaleは既にonZoomコールバック内で更新されているため、ここでの処理は不要
-      this.initialDistance = 0;
-
-      // 1本指になったので、パン可能状態を更新
-      const touch = e.touches[0];
-      this.lastTouchX = touch.clientX;
-      this.lastTouchY = touch.clientY;
-
-      if (this.currentScale > 1) {
-        this.isPanning = true;
-      }
+      this.isDragging = false;
     }
   }
 
-  /**
-   * 2点間の距離を計算
-   */
-  private getDistance(touch1: Touch, touch2: Touch): number {
-    const dx = touch1.clientX - touch2.clientX;
-    const dy = touch1.clientY - touch2.clientY;
-    return Math.sqrt(dx * dx + dy * dy);
+  private handleMouseDown(e: MouseEvent): void {
+    // 左クリックのみ
+    if (e.button !== 0) return;
+
+    e.preventDefault();
+
+    // ドラッグ開始
+    this.lastTouchX = e.clientX;
+    this.lastTouchY = e.clientY;
+    this.swipeStartX = e.clientX;
+    this.swipeStartY = e.clientY;
+    this.isDragging = true;
   }
 
-  /**
-   * スケールを設定（外部から呼ばれる）
-   */
-  setScale(scale: number): void {
-    this.currentScale = Math.max(this.minScale, Math.min(this.maxScale, scale));
+  private handleMouseMove(e: MouseEvent): void {
+    if (!this.isDragging) return;
+
+    e.preventDefault();
+
+    const deltaX = e.clientX - this.lastTouchX;
+    const deltaY = e.clientY - this.lastTouchY;
+
+    this.callbacks.onPan?.(deltaX, deltaY);
+
+    this.lastTouchX = e.clientX;
+    this.lastTouchY = e.clientY;
   }
 
-  /**
-   * スケール範囲を設定
-   */
-  setScaleRange(min: number, max: number): void {
-    this.minScale = min;
-    this.maxScale = max;
+  private handleMouseUp(): void {
+    if (!this.isDragging) return;
+
+    this.isDragging = false;
   }
 
   /**
@@ -208,6 +184,9 @@ export class TouchHandler {
     this.element.removeEventListener('touchstart', this.boundHandleTouchStart);
     this.element.removeEventListener('touchmove', this.boundHandleTouchMove);
     this.element.removeEventListener('touchend', this.boundHandleTouchEnd);
+    this.element.removeEventListener('mousedown', this.boundHandleMouseDown);
+    window.removeEventListener('mousemove', this.boundHandleMouseMove);
+    window.removeEventListener('mouseup', this.boundHandleMouseUp);
     this.element.removeEventListener('contextmenu', this.boundHandleContextMenu);
   }
 }

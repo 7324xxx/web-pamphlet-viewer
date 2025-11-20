@@ -43,6 +43,30 @@
     }
   }
 
+  /**
+   * ズームイン
+   */
+  function handleZoomIn(): void {
+    if (!viewer.renderer) return;
+
+    const currentScale = viewer.renderer.getScale();
+    const newScale = Math.min(currentScale + 0.2, 5); // 最大5倍
+    viewer.renderer.setScale(newScale);
+    viewer.redrawCurrentPage();
+  }
+
+  /**
+   * ズームアウト
+   */
+  function handleZoomOut(): void {
+    if (!viewer.renderer) return;
+
+    const currentScale = viewer.renderer.getScale();
+    const newScale = Math.max(currentScale - 0.2, 0.5); // 最小0.5倍
+    viewer.renderer.setScale(newScale);
+    viewer.redrawCurrentPage();
+  }
+
   // 初期化
   onMount(() => {
     // 初期化
@@ -146,6 +170,8 @@
       canGoNext={viewer.canGoNext}
       onPrev={() => canvasElement && viewer.prevPage(canvasElement)}
       onNext={() => canvasElement && viewer.nextPage(canvasElement)}
+      onZoomIn={handleZoomIn}
+      onZoomOut={handleZoomOut}
     />
   {/if}
 </div>
