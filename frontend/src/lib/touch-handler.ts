@@ -129,10 +129,15 @@ export class TouchHandler {
     if (e.touches.length === 0) {
       // すべてのタッチが終了
 
+      // 最終タッチ位置を取得（changedTouches から）
+      const finalTouch = e.changedTouches[0];
+      const finalX = finalTouch.clientX;
+      const finalY = finalTouch.clientY;
+
       // スワイプ検出（ズーム中でない場合のみ）
       if (!this.isPanning && this.currentScale <= 1) {
-        const deltaX = this.lastTouchX - this.swipeStartX;
-        const deltaY = Math.abs(this.lastTouchY - this.swipeStartY);
+        const deltaX = finalX - this.swipeStartX;
+        const deltaY = Math.abs(finalY - this.swipeStartY);
 
         // 横方向のスワイプで、縦方向の移動が少ない場合
         if (deltaY < this.swipeMaxVertical) {
