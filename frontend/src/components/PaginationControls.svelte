@@ -9,6 +9,7 @@
     totalPages,
     canGoPrev,
     canGoNext,
+    currentScale,
     onPrev,
     onNext,
     onZoomIn,
@@ -18,26 +19,33 @@
     totalPages: number;
     canGoPrev: boolean;
     canGoNext: boolean;
+    currentScale: number;
     onPrev: () => void;
     onNext: () => void;
     onZoomIn: () => void;
     onZoomOut: () => void;
   } = $props();
+
+  // ズームボタンのdisabled状態
+  const canZoomOut = $derived(currentScale > 0.5);
+  const canZoomIn = $derived(currentScale < 5);
 </script>
 
 <div class="flex items-center justify-between gap-4 p-4 bg-white border-t border-gray-200">
   <!-- ズームコントロール（左側） -->
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-2 flex-1 justify-start">
     <button
       onclick={onZoomOut}
-      class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 transition-colors touch-manipulation"
+      disabled={!canZoomOut}
+      class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Zoom out"
     >
       <ZoomOut size={20} />
     </button>
     <button
       onclick={onZoomIn}
-      class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 transition-colors touch-manipulation"
+      disabled={!canZoomIn}
+      class="flex items-center justify-center p-3 min-w-11 bg-gray-500 text-white rounded-lg hover:bg-gray-600 active:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors touch-manipulation"
       aria-label="Zoom in"
     >
       <ZoomIn size={20} />
@@ -45,7 +53,7 @@
   </div>
 
   <!-- ページネーションコントロール（中央） -->
-  <div class="flex items-center gap-4">
+  <div class="flex items-center gap-4 flex-1 justify-center">
     <button
       onclick={onPrev}
       disabled={!canGoPrev}
@@ -70,5 +78,5 @@
   </div>
 
   <!-- 右側のスペーサー（レイアウトバランス用） -->
-  <div class="w-[104px]"></div>
+  <div class="flex-1"></div>
 </div>

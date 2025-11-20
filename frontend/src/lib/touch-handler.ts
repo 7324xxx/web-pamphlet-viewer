@@ -23,12 +23,14 @@ export class TouchHandler {
   private isDragging = false;
   private lastTouchX = 0;
   private lastTouchY = 0;
+  private hasMoved = false; // ドラッグ中に移動したかどうか
 
   // スワイプ用
   private swipeStartX = 0;
   private swipeStartY = 0;
   private swipeThreshold = 50; // px
   private swipeMaxVertical = 100; // 縦方向の許容範囲
+  private panThreshold = 10; // パンとみなす移動量の閾値（px）
 
   // ダブルタップ用
   private lastTapTime = 0;
@@ -94,6 +96,7 @@ export class TouchHandler {
       this.swipeStartY = touch.clientY;
       this.lastTouchX = touch.clientX;
       this.lastTouchY = touch.clientY;
+      this.hasMoved = false;
 
       // 常にドラッグ可能
       this.isDragging = true;
@@ -102,12 +105,20 @@ export class TouchHandler {
 
   private handleTouchMove(e: TouchEvent): void {
     if (e.touches.length === 1 && this.isDragging) {
-      // ドラッグ/パン（常時有効）
-      e.preventDefault();
       const touch = e.touches[0];
       const deltaX = touch.clientX - this.lastTouchX;
       const deltaY = touch.clientY - this.lastTouchY;
 
+      // 移動量がpanThresholdを超えたらパンとみなす
+      const totalDeltaX = Math.abs(touch.clientX - this.swipeStartX);
+      const totalDeltaY = Math.abs(touch.clientY - this.swipeStartY);
+
+      if (!this.hasMoved && (totalDeltaX > this.panThreshold || totalDeltaY > this.panThreshold)) {
+        this.hasMoved = true;
+      }
+
+      // ドラッグ/パン（常時有効）
+      e.preventDefault();
       this.callbacks.onPan?.(deltaX, deltaY);
 
       this.lastTouchX = touch.clientX;
@@ -124,9 +135,81 @@ export class TouchHandler {
       const finalX = finalTouch.clientX;
       const finalY = finalTouch.clientY;
 
-      // スワイプ検出
-      const deltaX = finalX - this.swipeStartX;
-      const deltaY = Math.abs(finalY - this.swipeStartY);
+      // スワイプ検出（パン操作をしていない場合のみ）
+      if (!this.hasMoved) {
+        const deltaX = finalX - this.swipeStartX;
+        const deltaY = Math.abs(finalY - this.swipeStartY);
+
+        // 横方向のスワイプで、縦方向の移動が少ない場合
+        if (deltaY < this.swipeMaxVertical) {
+          if (deltaX > this.swipeThreshold) {
+            // 右スワイプ（前のページへ）
+            this.callbacks.onSwipeRight?.();
+          } else if (deltaX < -this.swipeThreshold) {
+            // 左スワイプ（次のページへ）
+            this.callbacks.onSwipeLeft?.();
+          }
+        }
+      }
+
+      this.isDragging = false;
+      this.hasMoved = false;
+    }
+  }
+
+  private handleMouseDown(e: MouseEvent): void {
+    // 左クリックのみ
+    if (e.button !== 0) return;
+
+    // インタラクティブな要素（ボタン、リンク等）はスキップ
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'BUTTON' || target.tagName === 'A' || target.closest('button, a')) {
+      return;
+    }
+
+    e.preventDefault();
+
+    // ドラッグ開始
+    this.lastTouchX = e.clientX;
+    this.lastTouchY = e.clientY;
+    this.swipeStartX = e.clientX;
+    this.swipeStartY = e.clientY;
+    this.hasMoved = false;
+    this.isDragging = true;
+  }
+
+  private handleMouseMove(e: MouseEvent): void {
+    if (!this.isDragging) return;
+
+    const deltaX = e.clientX - this.lastTouchX;
+    const deltaY = e.clientY - this.lastTouchY;
+
+    // 移動量がpanThresholdを超えたらパンとみなす
+    const totalDeltaX = Math.abs(e.clientX - this.swipeStartX);
+    const totalDeltaY = Math.abs(e.clientY - this.swipeStartY);
+
+    if (!this.hasMoved && (totalDeltaX > this.panThreshold || totalDeltaY > this.panThreshold)) {
+      this.hasMoved = true;
+    }
+
+    // Canvas要素上またはその子孫要素上でのみpreventDefault
+    if (this.element.contains(e.target as Node)) {
+      e.preventDefault();
+    }
+
+    this.callbacks.onPan?.(deltaX, deltaY);
+
+    this.lastTouchX = e.clientX;
+    this.lastTouchY = e.clientY;
+  }
+
+  private handleMouseUp(e: MouseEvent): void {
+    if (!this.isDragging) return;
+
+    // スワイプ検出（パン操作をしていない場合のみ）
+    if (!this.hasMoved) {
+      const deltaX = e.clientX - this.swipeStartX;
+      const deltaY = Math.abs(e.clientY - this.swipeStartY);
 
       // 横方向のスワイプで、縦方向の移動が少ない場合
       if (deltaY < this.swipeMaxVertical) {
@@ -138,43 +221,10 @@ export class TouchHandler {
           this.callbacks.onSwipeLeft?.();
         }
       }
-
-      this.isDragging = false;
     }
-  }
-
-  private handleMouseDown(e: MouseEvent): void {
-    // 左クリックのみ
-    if (e.button !== 0) return;
-
-    e.preventDefault();
-
-    // ドラッグ開始
-    this.lastTouchX = e.clientX;
-    this.lastTouchY = e.clientY;
-    this.swipeStartX = e.clientX;
-    this.swipeStartY = e.clientY;
-    this.isDragging = true;
-  }
-
-  private handleMouseMove(e: MouseEvent): void {
-    if (!this.isDragging) return;
-
-    e.preventDefault();
-
-    const deltaX = e.clientX - this.lastTouchX;
-    const deltaY = e.clientY - this.lastTouchY;
-
-    this.callbacks.onPan?.(deltaX, deltaY);
-
-    this.lastTouchX = e.clientX;
-    this.lastTouchY = e.clientY;
-  }
-
-  private handleMouseUp(): void {
-    if (!this.isDragging) return;
 
     this.isDragging = false;
+    this.hasMoved = false;
   }
 
   /**

@@ -30,6 +30,9 @@
   // Media query for spread mode (md以上で見開き表示)
   let mediaQuery = $state<MediaQueryList | null>(null);
 
+  // Current scale state
+  let currentScale = $state<number>(1);
+
   /**
    * キーボードイベント
    */
@@ -49,9 +52,10 @@
   function handleZoomIn(): void {
     if (!viewer.renderer) return;
 
-    const currentScale = viewer.renderer.getScale();
-    const newScale = Math.min(currentScale + 0.2, 5); // 最大5倍
+    const scale = viewer.renderer.getScale();
+    const newScale = Math.min(scale + 0.2, 5); // 最大5倍
     viewer.renderer.setScale(newScale);
+    currentScale = newScale;
     viewer.redrawCurrentPage();
   }
 
@@ -61,9 +65,10 @@
   function handleZoomOut(): void {
     if (!viewer.renderer) return;
 
-    const currentScale = viewer.renderer.getScale();
-    const newScale = Math.max(currentScale - 0.2, 0.5); // 最小0.5倍
+    const scale = viewer.renderer.getScale();
+    const newScale = Math.max(scale - 0.2, 0.5); // 最小0.5倍
     viewer.renderer.setScale(newScale);
+    currentScale = newScale;
     viewer.redrawCurrentPage();
   }
 
@@ -168,6 +173,7 @@
       totalPages={viewer.totalPages}
       canGoPrev={viewer.canGoPrev}
       canGoNext={viewer.canGoNext}
+      currentScale={currentScale}
       onPrev={() => canvasElement && viewer.prevPage(canvasElement)}
       onNext={() => canvasElement && viewer.nextPage(canvasElement)}
       onZoomIn={handleZoomIn}
