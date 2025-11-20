@@ -331,9 +331,10 @@ export class CanvasRenderer {
    * パン設定
    */
   setPan(x: number, y: number): void {
-    // パン範囲を制限（画像が画面外に行きすぎないように）
-    const maxX = Math.max(0, (this.pageWidth * this.scale - this.pageWidth) / 2);
-    const maxY = Math.max(0, (this.pageHeight * this.scale - this.pageHeight) / 2);
+    // パン範囲の制限を緩和（画像全体を自由に動かせるように）
+    // Canvas表示サイズの2倍まで移動可能
+    const maxX = this.pageWidth * 2;
+    const maxY = this.pageHeight * 2;
 
     this.translateX = Math.max(-maxX, Math.min(maxX, x));
     this.translateY = Math.max(-maxY, Math.min(maxY, y));
