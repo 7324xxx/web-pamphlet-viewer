@@ -11,7 +11,7 @@ export default defineConfig({
     lib: {
       entry: './src/main.ts',
       name: 'PamphletViewer',
-      formats: ['es', 'umd']
+      formats: ['es']
     },
     rollupOptions: {
       output: {
