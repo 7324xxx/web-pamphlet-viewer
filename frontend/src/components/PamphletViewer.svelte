@@ -95,17 +95,18 @@
   // タッチジェスチャー初期化（containerElementとrendererが準備できた後）
   $effect(() => {
     if (containerElement && viewer.renderer) {
-      touchGestures = useTouchGestures(
+      const gestures = useTouchGestures(
         containerElement,
         viewer.renderer,
         () => canvasElement && viewer.nextPage(canvasElement),
         () => canvasElement && viewer.prevPage(canvasElement),
         () => viewer.redrawCurrentPage()
       );
-      touchGestures.initialize();
+      gestures.initialize();
+      touchGestures = gestures;
 
       return () => {
-        touchGestures?.cleanup();
+        gestures.cleanup();
       };
     }
   });
